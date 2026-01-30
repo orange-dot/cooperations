@@ -10,8 +10,7 @@
 - **Mechanism:** Model writes code that recursively calls sub-LLM in loops
 - **Result:** Scaling to 10M+ tokens, O(n²) semantic work
 
-### Dr Milan Milanovic (Twitter)
-- **Key idea:** Explicit meta-cognition with confidence scores
+### Dr Milan Milanovic- **Key idea:** Explicit meta-cognition with confidence scores
 - **Mechanism:** VERIFY step that checks logic, facts, bias
 - **Result:** Retry mechanism when confidence drops below threshold
 
@@ -738,5 +737,4 @@ The key advantage of the two-layer approach is **efficiency** - only items that 
 ## References
 
 - **RLM:** MIT CSAIL, arXiv:2512.24601v2 "Recursive Language Models"
-- **Verification approach:** Dr Milan Milanovic (Twitter)
-- **Combined concept:** RVR (Recursive Verified Reasoning)
+- **Verification approach:** Dr Milan Milanovic- **Combined concept:** RVR (Recursive Verified Reasoning)

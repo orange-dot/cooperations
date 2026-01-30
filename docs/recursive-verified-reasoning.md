@@ -10,8 +10,7 @@
 - **Mehanizam:** Model pise kod koji rekurzivno poziva sub-LLM u petljama
 - **Rezultat:** Skaliranje do 10M+ tokena, O(n²) semanticki rad
 
-### Dr Milan Milanovic (Twitter)
-- **Kljucna ideja:** Eksplicitna meta-kognicija sa confidence scores
+### Dr Milan Milanovic- **Kljucna ideja:** Eksplicitna meta-kognicija sa confidence scores
 - **Mehanizam:** VERIFY korak koji proverava logiku, cinjenice, bias
 - **Rezultat:** Retry mehanizam kad confidence padne ispod praga
 
@@ -602,5 +601,4 @@ Kljucna prednost dvoslojnog pristupa je **efikasnost** - samo items koji zaista 
 ## Reference
 
 - **RLM:** MIT CSAIL, arXiv:2512.24601v2 "Recursive Language Models"
-- **Verification approach:** Dr Milan Milanovic (Twitter)
-- **Kombinovani koncept:** RVR (Recursive Verified Reasoning)
+- **Verification approach:** Dr Milan Milanovic- **Kombinovani koncept:** RVR (Recursive Verified Reasoning)

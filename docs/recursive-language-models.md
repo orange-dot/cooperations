@@ -320,8 +320,7 @@ func (a *RLMAgent) Execute(ctx context.Context, prompt string) (string, error) {
 
 ## References
 
-- **Original source:** Dr Milan Milanovic (Twitter)
-- **Paper:** arXiv:2512.24601v2 "Recursive Language Models"
+- **Original source:** Dr Milan Milanovic- **Paper:** arXiv:2512.24601v2 "Recursive Language Models"
 - **Institution:** MIT CSAIL
 - **Benchmarks:** BrowseComp+, OOLONG, LongBench-v2 CodeQA
 - **Related work:** CodeAct, Context Compaction, Sub-agent delegation
