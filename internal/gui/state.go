@@ -314,11 +314,31 @@ func (s *AppState) ToggleHelp() {
 	s.ShowHelp = !s.ShowHelp
 }
 
-func (s *AppState) Snapshot() AppState {
+// StateSnapshot is a copy of AppState without the mutex, safe to pass by value.
+type StateSnapshot struct {
+	Connected         bool
+	TaskDescription   string
+	TaskInProgress    bool
+	Completed         bool
+	RequiredInputs    []string
+	CurrentInput      int
+	StatusLine        string
+	ActivityLog       []string
+	WorkflowSteps     []WorkflowStepState
+	CurrentStep       int
+	InputText         string
+	HandoffHistory    []HandoffEntry
+	ErrorMessage      string
+	WaitingForInput   bool
+	CompletionMessage string
+	ShowHelp          bool
+}
+
+func (s *AppState) Snapshot() StateSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	cp := AppState{
+	cp := StateSnapshot{
 		Connected:         s.Connected,
 		TaskDescription:   s.TaskDescription,
 		TaskInProgress:    s.TaskInProgress,

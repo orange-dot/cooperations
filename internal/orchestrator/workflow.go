@@ -3,8 +3,10 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"time"
 
 	ctx "cooperations/internal/context"
+	"cooperations/internal/gui/stream"
 	"cooperations/internal/logging"
 	"cooperations/internal/types"
 )
@@ -18,6 +20,90 @@ type WorkflowConfig struct {
 func DefaultWorkflowConfig() WorkflowConfig {
 	return WorkflowConfig{
 		MaxReviewCycles: 2,
+	}
+}
+
+// emitProgress sends a progress update to the stream if available.
+func (o *Orchestrator) emitProgress(stage string, percent float64, message string) {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Progress <- stream.ProgressUpdate{
+		Stage:   stage,
+		Percent: percent,
+		Message: message,
+	}:
+	default:
+		// Channel full, skip
+	}
+}
+
+// emitHandoff sends a handoff event to the stream if available.
+func (o *Orchestrator) emitHandoff(from, to, reason string) {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Handoffs <- stream.HandoffEvent{
+		From:      from,
+		To:        to,
+		Reason:    reason,
+		Timestamp: time.Now(),
+	}:
+	default:
+	}
+}
+
+// emitTokens sends a token update to the stream if available.
+func (o *Orchestrator) emitTokens(prompt, completion, total int) {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Tokens <- stream.TokenUpdate{
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		TotalTokens:      total,
+	}:
+	default:
+	}
+}
+
+// emitCode sends a code update to the stream if available.
+func (o *Orchestrator) emitCode(path, content, language string) {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Code <- stream.CodeUpdate{
+		Path:     path,
+		Content:  content,
+		Language: language,
+	}:
+	default:
+	}
+}
+
+// emitError sends an error to the stream if available.
+func (o *Orchestrator) emitError(err error) {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Error <- err:
+	default:
+	}
+}
+
+// emitDone signals workflow completion to the stream if available.
+func (o *Orchestrator) emitDone() {
+	if o.stream == nil {
+		return
+	}
+	select {
+	case o.stream.Done <- struct{}{}:
+	default:
 	}
 }
 
@@ -38,6 +124,14 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 		FilesInScope:    []string{},
 	}
 	artifacts := types.HArtifacts{}
+
+	// Track total tokens for stream updates
+	totalTokens := 0
+	stepCount := 0
+
+	// Emit initial progress
+	o.emitProgress("Starting", 0, fmt.Sprintf("Starting workflow for task: %s", task.ID))
+	o.emitHandoff("user", string(initialRole), "Initial routing")
 
 	for {
 		// Check for context cancellation
@@ -75,9 +169,16 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 
 		// Execute the agent
 		logging.AgentStart(string(state.CurrentRole), task.ID)
+		stepCount++
+
+		// Emit progress before execution
+		roleLabel := roleToLabel(state.CurrentRole)
+		o.emitProgress(roleLabel, float64(stepCount*20), fmt.Sprintf("%s is working...", roleLabel))
+
 		response, err := agent.Execute(c, *handoff)
 		if err != nil {
 			logging.Error("agent execution failed", err, "role", state.CurrentRole, "task_id", task.ID)
+			o.emitError(err)
 			return types.WorkflowResult{
 				Task:     task,
 				Handoffs: state.Handoffs,
@@ -88,6 +189,10 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 
 		logging.AgentComplete(string(state.CurrentRole), task.ID, response.DurationMS, response.TokensUsed)
 
+		// Emit token update
+		totalTokens += response.TokensUsed
+		o.emitTokens(response.TokensUsed/2, response.TokensUsed/2, totalTokens)
+
 		// Update handoff with execution metadata
 		handoff.Metadata = types.HMetadata{
 			TokensUsed: response.TokensUsed,
@@ -97,6 +202,11 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 
 		// Merge artifacts
 		artifacts = ctx.MergeArtifacts(artifacts, response.Artifacts)
+
+		// Emit code update if code was generated
+		if artifacts.Code != "" && state.CurrentRole == types.RoleImplementer {
+			o.emitCode("generated/code.go", artifacts.Code, "go")
+		}
 
 		// Determine next role
 		var nextRole *types.Role
@@ -118,6 +228,8 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 		// Check if workflow is complete
 		if nextRole == nil {
 			logging.WorkflowComplete(task.ID, true, state.ReviewCycles)
+			o.emitProgress("Complete", 100, "Workflow completed successfully")
+			o.emitDone()
 			return types.WorkflowResult{
 				Task:      task,
 				Handoffs:  state.Handoffs,
@@ -143,10 +255,32 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 
 		// Transition to next role
 		logging.Handoff(string(state.CurrentRole), string(*nextRole), task.ID)
+
+		// Emit handoff event
+		o.emitHandoff(string(state.CurrentRole), string(*nextRole), fmt.Sprintf("Transitioning to %s", roleToLabel(*nextRole)))
+
 		state.CurrentRole = *nextRole
 
 		// Update context for next iteration
 		handoffCtx.TaskDescription = response.Content
+	}
+}
+
+// roleToLabel converts a role to a human-readable label.
+func roleToLabel(role types.Role) string {
+	switch role {
+	case types.RoleArchitect:
+		return "Architect"
+	case types.RoleImplementer:
+		return "Implementer"
+	case types.RoleReviewer:
+		return "Reviewer"
+	case types.RoleNavigator:
+		return "Navigator"
+	case types.RoleHuman:
+		return "Human"
+	default:
+		return string(role)
 	}
 }
 

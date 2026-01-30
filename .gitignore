@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-coop
+/coop
 
 # Test binary
 *.test
@@ -32,3 +32,4 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+.claude/settings.local.json

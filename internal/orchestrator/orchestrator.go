@@ -8,6 +8,7 @@ import (
 	"cooperations/internal/adapters"
 	"cooperations/internal/agents"
 	coopctx "cooperations/internal/context"
+	"cooperations/internal/gui/stream"
 	"cooperations/internal/types"
 )
 
@@ -17,6 +18,7 @@ type Orchestrator struct {
 	agents map[types.Role]agents.Agent
 	store  *coopctx.Store
 	config WorkflowConfig
+	stream *stream.WorkflowStream // Optional stream for GUI events
 }
 
 // New creates a new orchestrator with the given configuration.
@@ -56,7 +58,18 @@ func New(config WorkflowConfig) (*Orchestrator, error) {
 		agents: agentMap,
 		store:  store,
 		config: config,
+		stream: nil,
 	}, nil
+}
+
+// NewWithStream creates a new orchestrator that emits events to the given stream.
+func NewWithStream(config WorkflowConfig, ws *stream.WorkflowStream) (*Orchestrator, error) {
+	orch, err := New(config)
+	if err != nil {
+		return nil, err
+	}
+	orch.stream = ws
+	return orch, nil
 }
 
 // Run executes a task through the workflow.
