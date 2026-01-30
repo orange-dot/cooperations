@@ -4,7 +4,7 @@
 > Authors: MIT CSAIL research team
 > Models tested: GPT-5, Qwen3-Coder-480B-A35B
 >
-> **Source:** Dr. Milan Milanovic (Twitter) - originally shared this research
+> **Source:** Dr Milan Milanovic (Twitter) - originally shared this research
 
 ## Overview
 
@@ -320,7 +320,7 @@ func (a *RLMAgent) Execute(ctx context.Context, prompt string) (string, error) {
 
 ## References
 
-- **Original source:** Dr. Milan Milanovic (Twitter)
+- **Original source:** Dr Milan Milanovic (Twitter)
 - **Paper:** arXiv:2512.24601v2 "Recursive Language Models"
 - **Institution:** MIT CSAIL
 - **Benchmarks:** BrowseComp+, OOLONG, LongBench-v2 CodeQA

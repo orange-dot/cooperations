@@ -10,21 +10,21 @@
 - **Mechanism:** Model writes code that recursively calls sub-LLM in loops
 - **Result:** Scaling to 10M+ tokens, O(n²) semantic work
 
-### Dr. Milan Milanovic (Twitter)
+### Dr Milan Milanovic (Twitter)
 - **Key idea:** Explicit meta-cognition with confidence scores
 - **Mechanism:** VERIFY step that checks logic, facts, bias
 - **Result:** Retry mechanism when confidence drops below threshold
 
 ## Why Combine?
 
-| Aspect | RLM | Dr. Milan Milanovic | RVR (proposed concept) |
+| Aspect | RLM | Dr Milan Milanovic | RVR (proposed concept) |
 |--------|-----|---------------------|------------------------|
 | Scaling | 10M+ tokens | Limited by context | 10M+ tokens (theoretical) |
 | Verification | Implicit (model decides) | Explicit (confidence) | Explicit + recursive (idea) |
 | Retry | None | When confidence < 0.8 | Configurable per task type (idea) |
 | Efficiency | High | Medium (double calls) | High (two-layer approach, theoretical) |
 
-> **Note:** RLM and Dr. Milan Milanovic columns reflect documented results. RVR column represents proposed ideas combining both approaches - not yet validated.
+> **Note:** RLM and Dr Milan Milanovic columns reflect documented results. RVR column represents proposed ideas combining both approaches - not yet validated.
 
 ---
 
@@ -738,5 +738,5 @@ The key advantage of the two-layer approach is **efficiency** - only items that 
 ## References
 
 - **RLM:** MIT CSAIL, arXiv:2512.24601v2 "Recursive Language Models"
-- **Verification approach:** Dr. Milan Milanovic (Twitter)
+- **Verification approach:** Dr Milan Milanovic (Twitter)
 - **Combined concept:** RVR (Recursive Verified Reasoning)
