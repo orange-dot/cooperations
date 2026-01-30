@@ -27,41 +27,34 @@ Structure your review as:
 1. Summary (overall assessment)
 2. Issues (if any, with severity)
 3. Suggestions (improvements)
-4. Verdict: APPROVED or CHANGES_NEEDED
+4. Verdict: APPROVED or CHANGES_NEEDED`
 
-After your review:
-- If changes are needed, say "NEXT: implementer"
-- If approved, say "NEXT: done"`
-
-// ReviewerAgent handles code review tasks.
+// ReviewerAgent handles code review using Claude CLI.
 type ReviewerAgent struct {
-	BaseAgent
+	cli *adapters.ClaudeCLI
 }
 
-// NewReviewerAgent creates a new Reviewer agent.
-func NewReviewerAgent(adapter adapters.Adapter) *ReviewerAgent {
-	return &ReviewerAgent{
-		BaseAgent: BaseAgent{
-			role:         types.RoleReviewer,
-			adapter:      adapter,
-			systemPrompt: reviewerSystemPrompt,
-		},
-	}
+// NewReviewerAgent creates a new Reviewer agent with Claude CLI.
+func NewReviewerAgent(cli *adapters.ClaudeCLI) *ReviewerAgent {
+	return &ReviewerAgent{cli: cli}
+}
+
+// Role returns the agent's role.
+func (a *ReviewerAgent) Role() types.Role {
+	return types.RoleReviewer
 }
 
 // Execute runs the reviewer agent.
 func (a *ReviewerAgent) Execute(ctx context.Context, handoff types.Handoff) (types.AgentResponse, error) {
 	start := time.Now()
 
-	prompt := a.buildPrompt(handoff)
-	contextText := a.buildContext(handoff)
+	prompt := buildClaudePrompt(reviewerSystemPrompt, handoff)
 
-	resp, err := a.adapter.Complete(ctx, prompt, contextText)
+	resp, err := a.cli.Execute(ctx, prompt)
 	if err != nil {
 		return types.AgentResponse{}, err
 	}
 
-	// Parse next role from response
 	nextRole := parseNextRole(resp.Content)
 
 	return types.AgentResponse{

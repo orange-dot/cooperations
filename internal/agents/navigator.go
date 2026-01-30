@@ -26,44 +26,34 @@ Output format:
 1. Current State: What has been done
 2. Blockers: What's preventing progress (if any)
 3. Next Steps: Recommended actions
-4. Questions: Any clarifications needed from the user
+4. Questions: Any clarifications needed from the user`
 
-After your analysis:
-- If design is needed, say "NEXT: architect"
-- If implementation is needed, say "NEXT: implementer"
-- If review is needed, say "NEXT: reviewer"
-- If user input is needed, say "NEXT: user"
-- If the task is complete, say "NEXT: done"`
-
-// NavigatorAgent handles context tracking and navigation.
+// NavigatorAgent handles context tracking using Claude CLI.
 type NavigatorAgent struct {
-	BaseAgent
+	cli *adapters.ClaudeCLI
 }
 
-// NewNavigatorAgent creates a new Navigator agent.
-func NewNavigatorAgent(adapter adapters.Adapter) *NavigatorAgent {
-	return &NavigatorAgent{
-		BaseAgent: BaseAgent{
-			role:         types.RoleNavigator,
-			adapter:      adapter,
-			systemPrompt: navigatorSystemPrompt,
-		},
-	}
+// NewNavigatorAgent creates a new Navigator agent with Claude CLI.
+func NewNavigatorAgent(cli *adapters.ClaudeCLI) *NavigatorAgent {
+	return &NavigatorAgent{cli: cli}
+}
+
+// Role returns the agent's role.
+func (a *NavigatorAgent) Role() types.Role {
+	return types.RoleNavigator
 }
 
 // Execute runs the navigator agent.
 func (a *NavigatorAgent) Execute(ctx context.Context, handoff types.Handoff) (types.AgentResponse, error) {
 	start := time.Now()
 
-	prompt := a.buildPrompt(handoff)
-	contextText := a.buildContext(handoff)
+	prompt := buildClaudePrompt(navigatorSystemPrompt, handoff)
 
-	resp, err := a.adapter.Complete(ctx, prompt, contextText)
+	resp, err := a.cli.Execute(ctx, prompt)
 	if err != nil {
 		return types.AgentResponse{}, err
 	}
 
-	// Parse next role from response
 	nextRole := parseNextRole(resp.Content)
 
 	return types.AgentResponse{

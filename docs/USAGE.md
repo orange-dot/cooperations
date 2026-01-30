@@ -207,6 +207,18 @@ All task data is stored in `.cooperations/`:
     └── 170662090000.json   # Handoff history for task
 ```
 
+Generated artifacts are stored in `generated/` by default:
+
+```
+generated/
+└── 1706620800000000000/
+    ├── README.md
+    ├── design.md
+    ├── review.md
+    └── code/
+        └── main.go
+```
+
 ### Handoff Format
 
 Each handoff is a JSON object:
@@ -242,6 +254,7 @@ Configure in `.env` file:
 | `ANTHROPIC_API_KEY` | (required) | Claude Opus 4.5 API key |
 | `CODEX_API_KEY` | (required) | Codex 5.2 API key |
 | `COOPERATIONS_DIR` | `.cooperations` | Storage directory |
+| `COOPERATIONS_GENERATED_DIR` | `generated` | Generated artifacts directory |
 | `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
 | `MAX_REVIEW_CYCLES` | `2` | Default max review cycles |
 

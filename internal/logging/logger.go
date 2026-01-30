@@ -78,6 +78,11 @@ func Error(msg string, err error, attrs ...any) {
 	slog.Error(msg, args...)
 }
 
+// Info logs an informational message with context.
+func Info(msg string, attrs ...any) {
+	slog.Info(msg, attrs...)
+}
+
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

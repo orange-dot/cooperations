@@ -3,6 +3,10 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	ctx "cooperations/internal/context"
@@ -203,9 +207,67 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 		// Merge artifacts
 		artifacts = ctx.MergeArtifacts(artifacts, response.Artifacts)
 
-		// Emit code update if code was generated
-		if artifacts.Code != "" && state.CurrentRole == types.RoleImplementer {
-			o.emitCode("generated/code.go", artifacts.Code, "go")
+		// Update handoff with merged artifacts
+		handoff.Artifacts = artifacts
+
+		// Save artifacts to generated folder
+		if state.CurrentRole == types.RoleImplementer {
+			files := extractFiles(response.Artifacts)
+			if len(files) > 0 {
+				for rawPath, content := range files {
+					cleanPath := cleanRelativePath(rawPath)
+					if cleanPath == "" {
+						logging.Error("invalid file path in response", nil, "task_id", task.ID, "path", rawPath)
+						continue
+					}
+
+					path, err := o.store.SaveGeneratedCode(task.ID, cleanPath, content)
+					if err != nil {
+						logging.Error("failed to save code artifact", err, "task_id", task.ID)
+					} else {
+						logging.Info("saved code artifact", "path", path)
+						o.emitCode(cleanPath, content, detectLanguage(cleanPath))
+					}
+
+					if err := writeWorkspaceFile(cleanPath, content); err != nil {
+						logging.Error("failed to write task output", err, "task_id", task.ID, "path", cleanPath)
+					} else {
+						logging.Info("wrote task output", "path", cleanPath)
+					}
+				}
+			} else if artifacts.Code != "" {
+				path, err := o.store.SaveGeneratedCode(task.ID, "", artifacts.Code)
+				if err != nil {
+					logging.Error("failed to save code artifact", err, "task_id", task.ID)
+				} else {
+					logging.Info("saved code artifact", "path", path)
+					o.emitCode(path, artifacts.Code, "go")
+				}
+
+				if targetPath := extractTargetPath(task.Description); targetPath != "" {
+					if err := writeWorkspaceFile(targetPath, artifacts.Code); err != nil {
+						logging.Error("failed to write task output", err, "task_id", task.ID, "path", targetPath)
+					} else {
+						logging.Info("wrote task output", "path", targetPath)
+					}
+				}
+			}
+		}
+		if artifacts.DesignDoc != "" && state.CurrentRole == types.RoleArchitect {
+			path, err := o.store.SaveDesignDoc(task.ID, artifacts.DesignDoc)
+			if err != nil {
+				logging.Error("failed to save design doc", err, "task_id", task.ID)
+			} else {
+				logging.Info("saved design doc", "path", path)
+			}
+		}
+		if artifacts.ReviewFeedback != "" && state.CurrentRole == types.RoleReviewer {
+			path, err := o.store.SaveReviewFeedback(task.ID, artifacts.ReviewFeedback)
+			if err != nil {
+				logging.Error("failed to save review feedback", err, "task_id", task.ID)
+			} else {
+				logging.Info("saved review feedback", "path", path)
+			}
 		}
 
 		// Determine next role
@@ -230,6 +292,15 @@ func (o *Orchestrator) executeWorkflow(c context.Context, task types.Task, initi
 			logging.WorkflowComplete(task.ID, true, state.ReviewCycles)
 			o.emitProgress("Complete", 100, "Workflow completed successfully")
 			o.emitDone()
+
+			// Save task summary to generated folder
+			task.Status = types.TaskStatusCompleted
+			if path, err := o.store.SaveTaskSummary(task.ID, task, artifacts); err != nil {
+				logging.Error("failed to save task summary", err, "task_id", task.ID)
+			} else {
+				logging.Info("saved task summary", "path", path)
+			}
+
 			return types.WorkflowResult{
 				Task:      task,
 				Handoffs:  state.Handoffs,
@@ -287,11 +358,107 @@ func roleToLabel(role types.Role) string {
 // getModelForRole returns the model used by a role.
 func (o *Orchestrator) getModelForRole(role types.Role) types.Model {
 	switch role {
-	case types.RoleArchitect, types.RoleReviewer:
-		return types.ModelClaude
+	case types.RoleArchitect, types.RoleReviewer, types.RoleNavigator:
+		return types.ModelClaudeCLI
 	case types.RoleImplementer:
-		return types.ModelCodex
+		return types.ModelCodexCLI
 	default:
-		return types.ModelClaude
+		return types.ModelClaudeCLI
 	}
+}
+
+var taskPathPattern = regexp.MustCompile(`(?i)([A-Za-z0-9][A-Za-z0-9_./\\-]*\.[A-Za-z0-9]{1,6})`)
+
+func extractTargetPath(task string) string {
+	match := taskPathPattern.FindStringSubmatch(task)
+	if len(match) < 2 {
+		return ""
+	}
+
+	candidate := strings.Trim(match[1], "`\"'()[]{}<>.,;:")
+	return cleanRelativePath(candidate)
+}
+
+func extractFiles(artifacts map[string]any) map[string]string {
+	raw, ok := artifacts["files"]
+	if !ok {
+		return nil
+	}
+
+	switch v := raw.(type) {
+	case map[string]string:
+		return v
+	case map[string]any:
+		out := make(map[string]string, len(v))
+		for key, value := range v {
+			str, ok := value.(string)
+			if !ok {
+				continue
+			}
+			out[key] = str
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func cleanRelativePath(candidate string) string {
+	if candidate == "" {
+		return ""
+	}
+
+	clean := filepath.Clean(candidate)
+	if clean == "." || clean == ".." {
+		return ""
+	}
+	if filepath.IsAbs(clean) {
+		return ""
+	}
+	if strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	if strings.Contains(clean, ":") {
+		return ""
+	}
+
+	return clean
+}
+
+func detectLanguage(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go":
+		return "go"
+	case ".js", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".py":
+		return "python"
+	case ".md":
+		return "markdown"
+	case ".json":
+		return "json"
+	case ".yaml", ".yml":
+		return "yaml"
+	case ".toml":
+		return "toml"
+	default:
+		return "text"
+	}
+}
+
+func writeWorkspaceFile(relPath string, content string) error {
+	dir := filepath.Dir(relPath)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("create target directory: %w", err)
+		}
+	}
+
+	if err := os.WriteFile(relPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write target file: %w", err)
+	}
+
+	return nil
 }

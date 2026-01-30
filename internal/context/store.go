@@ -12,18 +12,26 @@ import (
 
 // Store manages local JSON file storage for tasks and handoffs.
 type Store struct {
-	baseDir string
+	baseDir      string
+	generatedDir string
 }
 
-// NewStore creates a new store with the given base directory.
-func NewStore(baseDir string) (*Store, error) {
+// NewStore creates a new store with the given base and generated directories.
+func NewStore(baseDir string, generatedDir string) (*Store, error) {
 	// Create directories if they don't exist
 	handoffsDir := filepath.Join(baseDir, "handoffs")
 	if err := os.MkdirAll(handoffsDir, 0755); err != nil {
 		return nil, fmt.Errorf("create handoffs directory: %w", err)
 	}
 
-	return &Store{baseDir: baseDir}, nil
+	if generatedDir == "" {
+		generatedDir = "generated"
+	}
+	if err := os.MkdirAll(generatedDir, 0755); err != nil {
+		return nil, fmt.Errorf("create generated directory: %w", err)
+	}
+
+	return &Store{baseDir: baseDir, generatedDir: generatedDir}, nil
 }
 
 // tasksFile returns the path to the tasks.json file.
@@ -163,4 +171,116 @@ func (s *Store) UpdateTaskStatus(taskID string, status string) error {
 // generateID creates a simple unique ID.
 func generateID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// TaskOutputDir returns the path to a task's generated output directory.
+func (s *Store) TaskOutputDir(taskID string) string {
+	return filepath.Join(s.generatedDir, taskID)
+}
+
+// EnsureTaskOutputDir creates the task output directory if it doesn't exist.
+func (s *Store) EnsureTaskOutputDir(taskID string) (string, error) {
+	dir := s.TaskOutputDir(taskID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("create task output directory: %w", err)
+	}
+	return dir, nil
+}
+
+// SaveGeneratedCode saves generated code to the task output directory.
+func (s *Store) SaveGeneratedCode(taskID string, filename string, code string) (string, error) {
+	dir, err := s.EnsureTaskOutputDir(taskID)
+	if err != nil {
+		return "", err
+	}
+
+	// Create code subdirectory
+	codeDir := filepath.Join(dir, "code")
+	if err := os.MkdirAll(codeDir, 0755); err != nil {
+		return "", fmt.Errorf("create code directory: %w", err)
+	}
+
+	// Default filename if not provided
+	if filename == "" {
+		filename = "main.go"
+	}
+
+	path := filepath.Join(codeDir, filepath.Clean(filename))
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", fmt.Errorf("create code subdirectory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(code), 0644); err != nil {
+		return "", fmt.Errorf("write code file: %w", err)
+	}
+
+	return path, nil
+}
+
+// SaveDesignDoc saves a design document to the task output directory.
+func (s *Store) SaveDesignDoc(taskID string, content string) (string, error) {
+	dir, err := s.EnsureTaskOutputDir(taskID)
+	if err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(dir, "design.md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write design doc: %w", err)
+	}
+
+	return path, nil
+}
+
+// SaveReviewFeedback saves review feedback to the task output directory.
+func (s *Store) SaveReviewFeedback(taskID string, content string) (string, error) {
+	dir, err := s.EnsureTaskOutputDir(taskID)
+	if err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(dir, "review.md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write review feedback: %w", err)
+	}
+
+	return path, nil
+}
+
+// SaveTaskSummary saves a summary of the task to the output directory.
+func (s *Store) SaveTaskSummary(taskID string, task types.Task, artifacts types.HArtifacts) (string, error) {
+	dir, err := s.EnsureTaskOutputDir(taskID)
+	if err != nil {
+		return "", err
+	}
+
+	summary := fmt.Sprintf(`# Task Summary
+
+**ID:** %s
+**Description:** %s
+**Created:** %s
+**Status:** %s
+
+## Artifacts
+
+`, task.ID, task.Description, task.CreatedAt, task.Status)
+
+	if artifacts.DesignDoc != "" {
+		summary += "- [Design Document](design.md)\n"
+	}
+	if artifacts.Code != "" {
+		summary += "- [Generated Code](code/)\n"
+	}
+	if artifacts.ReviewFeedback != "" {
+		summary += "- [Review Feedback](review.md)\n"
+	}
+	if artifacts.Notes != "" {
+		summary += "\n## Notes\n\n" + artifacts.Notes + "\n"
+	}
+
+	path := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(path, []byte(summary), 0644); err != nil {
+		return "", fmt.Errorf("write task summary: %w", err)
+	}
+
+	return path, nil
 }

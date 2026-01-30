@@ -16,8 +16,8 @@ const (
 type Model string
 
 const (
-	ModelClaude Model = "claude-opus-4-5"
-	ModelCodex  Model = "codex-5-2"
+	ModelClaudeCLI Model = "claude-cli"
+	ModelCodexCLI  Model = "codex-cli"
 )
 
 // Task represents a unit of work in the system.
@@ -97,8 +97,8 @@ type WorkflowResult struct {
 	Artifacts HArtifacts `json:"artifacts"`
 }
 
-// AdapterResponse is the normalized response from a model adapter.
-type AdapterResponse struct {
+// CLIResponse is the normalized response from a CLI execution.
+type CLIResponse struct {
 	Content    string `json:"content"`
 	TokensUsed int    `json:"tokens_used"`
 	Model      string `json:"model"`

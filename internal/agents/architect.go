@@ -21,42 +21,34 @@ Provide your design in a clear, structured format including:
 1. Overview of the approach
 2. Key interfaces/types (in Go)
 3. File structure if applicable
-4. Any important constraints or considerations
+4. Any important constraints or considerations`
 
-After your design, indicate the next step:
-- If implementation is needed, say "NEXT: implementer"
-- If review is needed first, say "NEXT: reviewer"
-- If the task is complete, say "NEXT: done"`
-
-// ArchitectAgent handles system design tasks.
+// ArchitectAgent handles system design tasks using Claude CLI.
 type ArchitectAgent struct {
-	BaseAgent
+	cli *adapters.ClaudeCLI
 }
 
-// NewArchitectAgent creates a new Architect agent.
-func NewArchitectAgent(adapter adapters.Adapter) *ArchitectAgent {
-	return &ArchitectAgent{
-		BaseAgent: BaseAgent{
-			role:         types.RoleArchitect,
-			adapter:      adapter,
-			systemPrompt: architectSystemPrompt,
-		},
-	}
+// NewArchitectAgent creates a new Architect agent with Claude CLI.
+func NewArchitectAgent(cli *adapters.ClaudeCLI) *ArchitectAgent {
+	return &ArchitectAgent{cli: cli}
+}
+
+// Role returns the agent's role.
+func (a *ArchitectAgent) Role() types.Role {
+	return types.RoleArchitect
 }
 
 // Execute runs the architect agent.
 func (a *ArchitectAgent) Execute(ctx context.Context, handoff types.Handoff) (types.AgentResponse, error) {
 	start := time.Now()
 
-	prompt := a.buildPrompt(handoff)
-	contextText := a.buildContext(handoff)
+	prompt := buildClaudePrompt(architectSystemPrompt, handoff)
 
-	resp, err := a.adapter.Complete(ctx, prompt, contextText)
+	resp, err := a.cli.Execute(ctx, prompt)
 	if err != nil {
 		return types.AgentResponse{}, err
 	}
 
-	// Parse next role from response
 	nextRole := parseNextRole(resp.Content)
 
 	return types.AgentResponse{

@@ -2,68 +2,61 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"cooperations/internal/adapters"
 	"cooperations/internal/types"
 )
 
-const implementerSystemPrompt = `You are a code implementer in a mob programming team.
-
-Your responsibilities:
-- Write clean, working code based on specifications
-- Generate boilerplate and scaffolding
-- Refactor existing code when needed
-- Implement features according to the design
-
-Guidelines:
-- Write idiomatic Go code
-- Include error handling
-- Keep functions focused and testable
-- Follow existing patterns in the codebase
-
-Output format:
-Provide your implementation as complete, runnable code.
-Include comments only where the logic isn't self-evident.
-
-After your implementation, indicate the next step:
-- If review is needed, say "NEXT: reviewer"
-- If the task is complete, say "NEXT: done"`
-
-// ImplementerAgent handles code implementation tasks.
+// ImplementerAgent handles code implementation using Codex CLI with full agentic access.
 type ImplementerAgent struct {
-	BaseAgent
+	cli *adapters.CodexCLI
 }
 
-// NewImplementerAgent creates a new Implementer agent.
-func NewImplementerAgent(adapter adapters.Adapter) *ImplementerAgent {
-	return &ImplementerAgent{
-		BaseAgent: BaseAgent{
-			role:         types.RoleImplementer,
-			adapter:      adapter,
-			systemPrompt: implementerSystemPrompt,
-		},
-	}
+// NewImplementerAgent creates a new Implementer agent with Codex CLI.
+func NewImplementerAgent(cli *adapters.CodexCLI) *ImplementerAgent {
+	return &ImplementerAgent{cli: cli}
 }
 
-// Execute runs the implementer agent.
+// Role returns the agent's role.
+func (a *ImplementerAgent) Role() types.Role {
+	return types.RoleImplementer
+}
+
+// Execute runs the implementer agent with full repo access.
 func (a *ImplementerAgent) Execute(ctx context.Context, handoff types.Handoff) (types.AgentResponse, error) {
 	start := time.Now()
 
-	prompt := a.buildPrompt(handoff)
-	contextText := a.buildContext(handoff)
+	prompt := buildCodexPrompt(handoff)
 
-	resp, err := a.adapter.Complete(ctx, prompt, contextText)
+	resp, err := a.cli.Execute(ctx, prompt)
 	if err != nil {
 		return types.AgentResponse{}, err
 	}
 
-	// Parse next role from response
 	nextRole := parseNextRole(resp.Content)
+	fileBlocks := parseCodexFileBlocks(resp.Content)
+	cleanCode := sanitizeCodexOutput(resp.Content)
+	files := map[string]string{}
+	if len(fileBlocks) > 0 {
+		cleanCode = strings.TrimSpace(fileBlocks[0].content)
+		for _, block := range fileBlocks {
+			if block.path == "" {
+				continue
+			}
+			files[block.path] = strings.TrimRight(block.content, "\n")
+		}
+	}
+
+	artifacts := map[string]any{"code": cleanCode}
+	if len(files) > 0 {
+		artifacts["files"] = files
+	}
 
 	return types.AgentResponse{
 		Content:    resp.Content,
-		Artifacts:  map[string]any{"code": resp.Content},
+		Artifacts:  artifacts,
 		TokensUsed: resp.TokensUsed,
 		DurationMS: time.Since(start).Milliseconds(),
 		NextRole:   nextRole,

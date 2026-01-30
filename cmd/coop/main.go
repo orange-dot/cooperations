@@ -12,6 +12,9 @@ import (
 	"cooperations/internal/gui"
 	"cooperations/internal/logging"
 	"cooperations/internal/orchestrator"
+	"cooperations/internal/tui"
+	"cooperations/internal/tui/demo"
+	"cooperations/internal/tui/stream"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -84,7 +87,18 @@ func main() {
 	var guiDemoMode bool
 	guiCmd.Flags().BoolVar(&guiDemoMode, "demo", false, "Run in demo mode with stub progress")
 
-	rootCmd.AddCommand(runCmd, statusCmd, historyCmd, guiCmd)
+	// TUI command
+	tuiCmd := &cobra.Command{
+		Use:   "tui [task]",
+		Short: "Launch the terminal user interface",
+		Long:  "Opens the Bubble Tea-based TUI for interactive mob programming workflow.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runTUI,
+	}
+	var tuiDemoMode bool
+	tuiCmd.Flags().BoolVar(&tuiDemoMode, "demo", false, "Run in demo mode with simulated workflow")
+
+	rootCmd.AddCommand(runCmd, statusCmd, historyCmd, guiCmd, tuiCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -283,6 +297,76 @@ func runGUI(cmd *cobra.Command, args []string) error {
 
 	app := gui.NewApp()
 	return app.RunWithDemo(task, demo)
+}
+
+func runTUI(cmd *cobra.Command, args []string) error {
+	demoMode, _ := cmd.Flags().GetBool("demo")
+
+	// Create workflow stream for communication
+	workflowStream := stream.NewWorkflowStream()
+	defer workflowStream.Close()
+
+	if demoMode {
+		// Run demo mode with simulated events
+		go demo.Run(workflowStream)
+	} else if len(args) > 0 {
+		// Run actual workflow with TUI
+		task := args[0]
+		go runTUIWorkflow(workflowStream, task)
+	}
+
+	// Start TUI
+	return tui.Run(workflowStream)
+}
+
+func runTUIWorkflow(s *stream.WorkflowStream, task string) {
+	// Get max cycles from env
+	cycles := 2
+	if envCycles := os.Getenv("MAX_REVIEW_CYCLES"); envCycles != "" {
+		if c, err := strconv.Atoi(envCycles); err == nil {
+			cycles = c
+		}
+	}
+
+	config := orchestrator.WorkflowConfig{
+		MaxReviewCycles: cycles,
+	}
+
+	orch, err := orchestrator.New(config)
+	if err != nil {
+		s.SendError(fmt.Errorf("initialize orchestrator: %w", err))
+		return
+	}
+
+	// Setup context
+	ctx := context.Background()
+
+	s.SendProgress(stream.ProgressUpdate{
+		Percent: 0,
+		Stage:   "Starting",
+		Message: "Running task: " + task,
+	})
+
+	// Run the workflow
+	result, err := orch.Run(ctx, task)
+	if err != nil {
+		s.SendError(err)
+		return
+	}
+
+	if result.Success {
+		s.SendToast(stream.ToastNotification{
+			Level:   "success",
+			Message: "Task completed successfully!",
+		})
+	} else {
+		s.SendToast(stream.ToastNotification{
+			Level:   "error",
+			Message: "Task failed: " + result.Error,
+		})
+	}
+
+	s.SignalDone()
 }
 
 func printTaskInfo(id, status, createdAt, description string) {

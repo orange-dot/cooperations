@@ -28,29 +28,39 @@ func New(config WorkflowConfig) (*Orchestrator, error) {
 	if storeDir == "" {
 		storeDir = ".cooperations"
 	}
+	generatedDir := os.Getenv("COOPERATIONS_GENERATED_DIR")
+	if generatedDir == "" {
+		generatedDir = "generated"
+	}
 
-	store, err := coopctx.NewStore(storeDir)
+	store, err := coopctx.NewStore(storeDir, generatedDir)
 	if err != nil {
 		return nil, fmt.Errorf("create store: %w", err)
 	}
 
-	// Initialize adapters
-	claudeAdapter, err := adapters.NewClaudeAdapter()
+	// Get repository root directory for Codex
+	repoRoot, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("create claude adapter: %w", err)
+		return nil, fmt.Errorf("get working directory: %w", err)
 	}
 
-	codexAdapter, err := adapters.NewCodexAdapter()
+	// Initialize CLIs
+	claudeCLI, err := adapters.NewClaudeCLI()
 	if err != nil {
-		return nil, fmt.Errorf("create codex adapter: %w", err)
+		return nil, fmt.Errorf("create claude CLI: %w", err)
 	}
 
-	// Initialize agents with appropriate adapters
+	codexCLI, err := adapters.NewCodexCLI(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("create codex CLI: %w", err)
+	}
+
+	// Initialize agents with their respective CLIs
 	agentMap := map[types.Role]agents.Agent{
-		types.RoleArchitect:   agents.NewArchitectAgent(claudeAdapter),
-		types.RoleImplementer: agents.NewImplementerAgent(codexAdapter),
-		types.RoleReviewer:    agents.NewReviewerAgent(claudeAdapter),
-		types.RoleNavigator:   agents.NewNavigatorAgent(claudeAdapter),
+		types.RoleArchitect:   agents.NewArchitectAgent(claudeCLI),
+		types.RoleImplementer: agents.NewImplementerAgent(codexCLI),
+		types.RoleReviewer:    agents.NewReviewerAgent(claudeCLI),
+		types.RoleNavigator:   agents.NewNavigatorAgent(claudeCLI),
 	}
 
 	return &Orchestrator{
