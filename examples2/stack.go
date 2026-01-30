@@ -1,35 +1,19 @@
-// go.mod
-module example.com/stack
+package main
 
-go 1.22
-```
-
-```go
-// stack/stack.go
-package stack
+import "fmt"
 
 // Stack represents a LIFO data structure.
 type Stack[T any] struct {
 	elements []T
 }
 
-// Stacker defines the interface for stack operations.
-type Stacker[T any] interface {
-	Push(element T)
-	Pop() (T, bool)
-	Peek() (T, bool)
-	IsEmpty() bool
-	Size() int
-	Clear()
-}
-
 // New creates and returns a new empty stack.
-func New[T any]() *Stack[T] {
+func NewStack[T any]() *Stack[T] {
 	return &Stack[T]{}
 }
 
 // NewWithCapacity creates a stack with pre-allocated capacity.
-func NewWithCapacity[T any](capacity int) *Stack[T] {
+func NewStackWithCapacity[T any](capacity int) *Stack[T] {
 	if capacity < 0 {
 		capacity = 0
 	}
@@ -86,93 +70,25 @@ func (s *Stack[T]) Clear() {
 	}
 	s.elements = nil
 }
-```
 
-```go
-// stack/stack_test.go
-package stack
-
-import "testing"
-
-func TestNewStackIsEmpty(t *testing.T) {
-	s := New[int]()
-	if !s.IsEmpty() {
-		t.Fatalf("expected empty stack")
-	}
-	if got := s.Size(); got != 0 {
-		t.Fatalf("expected size 0, got %d", got)
-	}
-}
-
-func TestPushPeekPop(t *testing.T) {
-	s := New[string]()
-
-	s.Push("a")
-	s.Push("b")
-
-	if got, ok := s.Peek(); !ok || got != "b" {
-		t.Fatalf("expected peek 'b' ok=true, got %q ok=%v", got, ok)
-	}
-
-	if got, ok := s.Pop(); !ok || got != "b" {
-		t.Fatalf("expected pop 'b' ok=true, got %q ok=%v", got, ok)
-	}
-	if got, ok := s.Pop(); !ok || got != "a" {
-		t.Fatalf("expected pop 'a' ok=true, got %q ok=%v", got, ok)
-	}
-
-	if _, ok := s.Pop(); ok {
-		t.Fatalf("expected pop from empty stack ok=false")
-	}
-	if _, ok := s.Peek(); ok {
-		t.Fatalf("expected peek from empty stack ok=false")
-	}
-}
-
-func TestNewWithCapacity(t *testing.T) {
-	s := NewWithCapacity[int](10)
-	if s == nil {
-		t.Fatalf("expected non-nil stack")
-	}
-	if !s.IsEmpty() {
-		t.Fatalf("expected empty stack")
-	}
+func main() {
+	s := NewStack[int]()
+	fmt.Println("Push 1, 2, 3")
 	s.Push(1)
-	if got := s.Size(); got != 1 {
-		t.Fatalf("expected size 1, got %d", got)
-	}
-}
+	s.Push(2)
+	s.Push(3)
 
-func TestClear(t *testing.T) {
-	s := New[int]()
-	for i := 0; i < 5; i++ {
-		s.Push(i)
-	}
-	if s.IsEmpty() {
-		t.Fatalf("expected non-empty stack before Clear")
+	fmt.Printf("Size: %d\n", s.Size())
+
+	if v, ok := s.Peek(); ok {
+		fmt.Printf("Peek: %d\n", v)
 	}
 
-	s.Clear()
-	if !s.IsEmpty() {
-		t.Fatalf("expected empty stack after Clear")
-	}
-	if got := s.Size(); got != 0 {
-		t.Fatalf("expected size 0 after Clear, got %d", got)
+	for !s.IsEmpty() {
+		if v, ok := s.Pop(); ok {
+			fmt.Printf("Pop: %d\n", v)
+		}
 	}
 
-	// Should still be usable after Clear.
-	s.Push(42)
-	if got, ok := s.Peek(); !ok || got != 42 {
-		t.Fatalf("expected peek 42 ok=true after Clear, got %d ok=%v", got, ok)
-	}
-}
-
-func TestNewWithCapacityNegative(t *testing.T) {
-	s := NewWithCapacity[int](-1)
-	if s == nil {
-		t.Fatalf("expected non-nil stack")
-	}
-	if !s.IsEmpty() || s.Size() != 0 {
-		t.Fatalf("expected empty stack with size 0")
-	}
+	fmt.Printf("IsEmpty: %v\n", s.IsEmpty())
 }
