@@ -15,7 +15,7 @@ import (
 
 const (
 	claudeAPIURL     = "https://api.anthropic.com/v1/messages"
-	claudeModel      = "claude-opus-4-5-20250514"
+	claudeModel      = "claude-opus-4-5-20251101"
 	claudeAPIVersion = "2023-06-01"
 )
 
