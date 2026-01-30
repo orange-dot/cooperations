@@ -17,14 +17,14 @@
 
 ## Zasto kombinovati?
 
-| Aspekt | RLM (dokazano) | Milan (dokazano) | RVR (predlozeni koncept) |
-|--------|----------------|------------------|--------------------------|
+| Aspekt | RLM | Dr. Milan Milanovic | RVR (predlozeni koncept) |
+|--------|-----|---------------------|--------------------------|
 | Skaliranje | 10M+ tokena | Ograniceno kontekstom | 10M+ tokena (teoretski) |
 | Verifikacija | Implicitna (model odlucuje) | Eksplicitna (confidence) | Eksplicitna + rekurzivna (ideja) |
 | Retry | Nema | Kad confidence < 0.8 | Konfigurabilan po task tipu (ideja) |
 | Efikasnost | Visoka | Srednja (dupli pozivi) | Visoka (dvoslojni pristup, teoretski) |
 
-> **Napomena:** RLM i Milan kolone odrazavaju dokumentovane rezultate. RVR kolona predstavlja predlozene ideje koje kombinuju oba pristupa - jos uvek nije validirano.
+> **Napomena:** RLM i Dr. Milan Milanovic kolone odrazavaju dokumentovane rezultate. RVR kolona predstavlja predlozene ideje koje kombinuju oba pristupa - jos uvek nije validirano.
 
 ---
 
