@@ -39,7 +39,7 @@ func merge(left, right []int) []int {
 	return result
 }
 
-func main() {
+func demoMergeSort() {
 	unsorted := []int{9, 4, 3, 5, 1, 8, 7, 2, 6}
 	fmt.Println("Unsorted:", unsorted)
 

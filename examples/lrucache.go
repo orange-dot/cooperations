@@ -35,12 +35,18 @@ func NewLRUCache(capacity int) (*LRUCache, error) {
 // Get method retrieves the value for a key and marks it as recently used.
 // Updated to use Lock instead of RLock to fix race condition
 func (c *LRUCache) Get(key int) (value int, ok bool) {
-	c.mu.Lock() 
+	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if elem, found := c.cache[key]; found {
+		entry, ok := c.getEntry(elem)
+		if !ok {
+			c.list.Remove(elem)
+			delete(c.cache, key)
+			return 0, false
+		}
 		c.list.MoveToFront(elem)
-		return c.getEntry(elem).value, true
+		return entry.value, true
 	}
 	return 0, false
 }
@@ -51,9 +57,13 @@ func (c *LRUCache) Put(key int, value int) {
 	defer c.mu.Unlock()
 
 	if elem, found := c.cache[key]; found {
-		c.list.MoveToFront(elem)
-		elem.Value.(*entry).value = value // Safe here as elem is assured to have correct type
-		return
+		if entry, ok := c.getEntry(elem); ok {
+			c.list.MoveToFront(elem)
+			entry.value = value
+			return
+		}
+		c.list.Remove(elem)
+		delete(c.cache, key)
 	}
 
 	if c.list.Len() == c.capacity {
@@ -66,11 +76,9 @@ func (c *LRUCache) Put(key int, value int) {
 
 // Utility function to safely retrieve entry from a list element
 // Added as suggested for safer type assertions
-func (c *LRUCache) getEntry(elem *list.Element) *entry {
-	if e, ok := elem.Value.(*entry); ok {
-		return e
-	}
-	return nil // Though this should theoretically never happen
+func (c *LRUCache) getEntry(elem *list.Element) (*entry, bool) {
+	e, ok := elem.Value.(*entry)
+	return e, ok
 }
 
 // removeOldest removes the least recently used (oldest) item from the cache
@@ -78,7 +86,9 @@ func (c *LRUCache) removeOldest() {
 	oldest := c.list.Back()
 	if oldest != nil {
 		c.list.Remove(oldest)
-		delete(c.cache, c.getEntry(oldest).key) // Updated to use safe type assertion via getEntry
+		if entry, ok := c.getEntry(oldest); ok {
+			delete(c.cache, entry.key)
+		}
 	}
 }
 
@@ -97,21 +107,21 @@ func (c *LRUCache) Clear() {
 	c.cache = make(map[int]*list.Element)
 }
 
-func main() {
+func demoLRUCache() {
 	lruCache, err := NewLRUCache(2)
 	if err != nil {
 		panic(err) // For simplicity in this example, panic on error
 	}
-	lruCache.Put(1, 1) // Cache is {1=1}
-	lruCache.Put(2, 2) // Cache is {1=1, 2=2}
+	lruCache.Put(1, 1)           // Cache is {1=1}
+	lruCache.Put(2, 2)           // Cache is {1=1, 2=2}
 	value, ok := lruCache.Get(1) // returns 1, true
 	fmt.Println(value, ok)
 
-	lruCache.Put(3, 3)    // Evicts key 2, cache is now {1=1, 3=3}
+	lruCache.Put(3, 3)          // Evicts key 2, cache is now {1=1, 3=3}
 	value, ok = lruCache.Get(2) // returns 0, false (since 2 was evicted)
 	fmt.Println(value, ok)
 
-	lruCache.Put(4, 4)    // Evicts key 1, cache is now {4=4, 3=3}
+	lruCache.Put(4, 4)          // Evicts key 1, cache is now {4=4, 3=3}
 	value, ok = lruCache.Get(1) // returns 0, false (since 1 was evicted)
 	fmt.Println(value, ok)
 	value, ok = lruCache.Get(3) // returns 3, true

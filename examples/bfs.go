@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"container/list"
+	"fmt"
 )
 
 // Graph represents a graph structure with nodes and edges
@@ -34,7 +34,7 @@ func (g *Graph) AddVertex(k int) error {
 func (g *Graph) AddEdge(from, to int) error {
 	fromVertex, fromExists := g.vertices[from]
 	toVertex, toExists := g.vertices[to]
-	
+
 	if !fromExists || !toExists {
 		return fmt.Errorf("failed to add edge: vertex %d or %d not found", from, to)
 	}
@@ -46,7 +46,7 @@ func (g *Graph) AddEdge(from, to int) error {
 	if from != to && !contains(toVertex.adjacent, from) { // Prevents adding the origin vertex into the adjacent slice twice in case of self-loops
 		toVertex.adjacent = append(toVertex.adjacent, fromVertex)
 	}
-	
+
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (g *Graph) BreadthFirstSearch(startKey int) ([]int, error) {
 		if visited[current.key] {
 			continue
 		}
-		
+
 		visited[current.key] = true
 		result = append(result, current.key)
 
@@ -91,7 +91,7 @@ func (g *Graph) BreadthFirstSearch(startKey int) ([]int, error) {
 	return result, nil
 }
 
-func main() {
+func demoBFS() {
 	graph := NewGraph()
 	for i := 0; i < 5; i++ {
 		err := graph.AddVertex(i)
@@ -99,7 +99,7 @@ func main() {
 			fmt.Println("Error adding vertex:", err)
 		}
 	}
-	
+
 	edges := []struct{ from, to int }{
 		{0, 1},
 		{0, 2},
@@ -107,13 +107,13 @@ func main() {
 		{2, 3},
 		{3, 3}, // Self-loop
 	}
-	
+
 	for _, edge := range edges {
 		if err := graph.AddEdge(edge.from, edge.to); err != nil {
 			fmt.Println(err)
 		}
 	}
-	
+
 	fmt.Println("Starting BFS traversal from vertex 2")
 	bfsResult, err := graph.BreadthFirstSearch(2)
 	if err != nil {
@@ -124,4 +124,3 @@ func main() {
 		fmt.Printf("%d ", v)
 	}
 }
-

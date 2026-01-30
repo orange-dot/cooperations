@@ -61,8 +61,8 @@ func searchNode(node *TreeNode, value int) bool {
 	return true
 }
 
-// Main function to demonstrate insert and search functionalities
-func main() {
+// demoBinaryTree demonstrates insert and search functionalities.
+func demoBinaryTree() {
 	bst := BinarySearchTree{}
 	valuesToInsert := []int{50, 30, 70, 20, 40, 60, 80}
 	for _, value := range valuesToInsert {

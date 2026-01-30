@@ -42,15 +42,15 @@ func quickSort(arr []int) []int {
 	return arr
 }
 
-func main() {
+func demoQuickSort() {
 	testCases := [][]int{
 		{9, 3, 4, 2, 1, 8, 5, 7, 6}, // Typical unsorted array
-		{},                           // Empty array
-		{1},                          // Single element
-		{2, 1},                       // Two elements
-		{1, 1, 1, 1},                 // All elements the same
-		{1, 2, 3, 4, 5},              // Already sorted
-		{5, 4, 3, 2, 1},              // Reverse sorted
+		{},                          // Empty array
+		{1},                         // Single element
+		{2, 1},                      // Two elements
+		{1, 1, 1, 1},                // All elements the same
+		{1, 2, 3, 4, 5},             // Already sorted
+		{5, 4, 3, 2, 1},             // Reverse sorted
 	}
 
 	for _, arr := range testCases {
@@ -59,4 +59,3 @@ func main() {
 		fmt.Printf("Sorted: %v\n", arr)
 	}
 }
-

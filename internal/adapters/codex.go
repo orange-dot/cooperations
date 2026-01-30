@@ -15,7 +15,7 @@ import (
 
 const (
 	codexAPIURL = "https://api.openai.com/v1/chat/completions"
-	codexModel  = "gpt-4-turbo-preview" // Placeholder for Codex 5.2
+	codexModel  = "gpt-5.2-2025-12-11" // Codex 5.2
 )
 
 // CodexAdapter implements Adapter for Codex 5.2.

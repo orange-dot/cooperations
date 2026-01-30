@@ -74,7 +74,7 @@ func (q *Queue[T]) IsEmpty() bool {
 }
 
 // main function to demonstrate operations of Queue
-func main() {
+func demoQueue() {
 	queue := NewQueue[int]() // Example of a queue for integers
 
 	// Enqueue items
