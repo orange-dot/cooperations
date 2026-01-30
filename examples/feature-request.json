@@ -1,0 +1,14 @@
+{
+  "description": "Add a user authentication endpoint with JWT tokens",
+  "requirements": [
+    "POST /api/auth/login accepts username and password",
+    "Returns JWT token on success",
+    "Token expires after 24 hours",
+    "Include refresh token mechanism"
+  ],
+  "constraints": [
+    "Use standard library where possible",
+    "No external auth providers",
+    "Must be testable without network"
+  ]
+}
