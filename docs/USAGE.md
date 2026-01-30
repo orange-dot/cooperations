@@ -27,6 +27,7 @@ coop run <task> [flags]
 **Flags:**
 | Flag | Short | Description |
 |------|-------|-------------|
+| `--output` | `-o` | Write generated code to file |
 | `--dry-run` | | Show routing decision without executing |
 | `--verbose` | `-v` | Show detailed output including generated code |
 | `--max-cycles` | | Override max review cycles (default: 2) |
@@ -38,6 +39,13 @@ coop run <task> [flags]
 coop run "design a user authentication system"
 coop run "implement JWT token validation"
 coop run "review the login handler for security issues"
+
+# Write generated code to file
+coop run -o dijkstra.go "implement dijkstra algorithm"
+coop run --output api.go "implement REST API handler"
+
+# Combine flags
+coop run -v -o output.go --max-cycles 2 "implement binary search"
 
 # Dry run - preview routing without API calls
 coop run --dry-run "fix the nil pointer in UserService"
@@ -168,6 +176,26 @@ coop run --max-cycles 3 "implement complex feature"
 ```
 
 ## Output Files
+
+### Writing Code to File
+
+Use `-o` / `--output` to write generated code directly to a file:
+
+```bash
+coop run -o mycode.go "implement a stack data structure"
+```
+
+Output:
+```
+[START] Running task: implement a stack data structure
+[COMPLETE] Task 1706620800000000000 completed successfully
+Artifacts saved to: .cooperations/handoffs/1706620800000000000.json
+Code written to: mycode.go
+```
+
+The CLI automatically extracts code from markdown code blocks if present.
+
+### Task Data
 
 All task data is stored in `.cooperations/`:
 
