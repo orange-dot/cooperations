@@ -58,7 +58,7 @@ func (c *CodexAdapter) Complete(ctx context.Context, prompt string, contextText 
 		Messages: []openAIMessage{
 			{Role: "user", Content: fullPrompt},
 		},
-		MaxTokens: 4096,
+		MaxCompletionTokens: 4096,
 	}
 
 	var resp types.AdapterResponse
@@ -133,9 +133,9 @@ func (c *CodexAdapter) doRequest(ctx context.Context, reqBody openAIRequest) (ty
 // OpenAI API types
 
 type openAIRequest struct {
-	Model     string          `json:"model"`
-	Messages  []openAIMessage `json:"messages"`
-	MaxTokens int             `json:"max_tokens"`
+	Model               string          `json:"model"`
+	Messages            []openAIMessage `json:"messages"`
+	MaxCompletionTokens int             `json:"max_completion_tokens"`
 }
 
 type openAIMessage struct {
