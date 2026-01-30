@@ -1,4 +1,4 @@
-// Package adapters provides model API adapters for the orchestrator.
+// Package adapters provides CLI adapters for the orchestrator.
 package adapters
 
 import (
@@ -7,11 +7,11 @@ import (
 	"cooperations/internal/types"
 )
 
-// Adapter is the interface for AI model adapters.
-type Adapter interface {
-	// Model returns the model identifier.
-	Model() types.Model
+// CLI is the interface for CLI-based AI tool execution.
+type CLI interface {
+	// Execute runs the CLI with the given prompt and returns the response.
+	Execute(ctx context.Context, prompt string) (types.CLIResponse, error)
 
-	// Complete sends a prompt to the model and returns the response.
-	Complete(ctx context.Context, prompt string, contextText string) (types.AdapterResponse, error)
+	// Name returns the CLI identifier.
+	Name() string
 }
