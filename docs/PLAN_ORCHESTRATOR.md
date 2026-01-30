@@ -1,42 +1,43 @@
 # Orchestrator Implementation Plan
 
-Build a TypeScript CLI orchestrator that coordinates Claude Opus 4.5 and Codex 5.2 as mob programming agents with role-based task routing and JSON file handoffs.
+Build a Go CLI orchestrator that coordinates Claude Opus 4.5 and Codex 5.2 as mob programming agents with role-based task routing and JSON file handoffs. The orchestrator runs locally, uses local storage, and has no managed cloud dependencies (Docker for local runs is OK).
 
 ## Project Structure
 
 ```
 cooperations/
-├── package.json                    # Project config, dependencies
-├── tsconfig.json                   # TypeScript configuration
-├── .gitignore                      # Ignore node_modules, .env, etc.
-├── src/
-│   ├── index.ts                    # CLI entry point
+├── go.mod
+├── go.sum
+├── .gitignore                      # Ignore .cooperations/, .env, etc.
+├── cmd/
+│   └── coop/
+│       └── main.go                 # CLI entry point
+├── internal/
 │   ├── orchestrator/
-│   │   ├── index.ts                # Main orchestrator class
-│   │   ├── router.ts               # Task → Role routing logic
-│   │   └── workflow.ts             # Workflow execution engine
+│   │   ├── orchestrator.go         # Main orchestrator
+│   │   ├── router.go               # Task -> Role routing logic
+│   │   └── workflow.go             # Workflow execution engine
 │   ├── agents/
-│   │   ├── index.ts                # Agent exports
-│   │   ├── base.ts                 # Base agent interface
-│   │   ├── architect.ts            # Architect role
-│   │   ├── implementer.ts          # Implementer role
-│   │   ├── reviewer.ts             # Reviewer role
-│   │   └── navigator.ts            # Navigator role
+│   │   ├── agent.go                # Agent interface
+│   │   ├── architect.go            # Architect role
+│   │   ├── implementer.go          # Implementer role
+│   │   ├── reviewer.go             # Reviewer role
+│   │   └── navigator.go            # Navigator role
 │   ├── adapters/
-│   │   ├── index.ts                # Adapter exports
-│   │   ├── base.ts                 # Base adapter interface
-│   │   ├── claude.ts               # Claude Opus 4.5 adapter
-│   │   └── codex.ts                # Codex 5.2 adapter
+│   │   ├── adapter.go              # Adapter interface
+│   │   ├── claude.go               # Claude Opus 4.5 adapter
+│   │   └── codex.go                # Codex 5.2 adapter
 │   ├── context/
-│   │   ├── index.ts                # Context exports
-│   │   ├── handoff.ts              # Handoff JSON schema & serialization
-│   │   └── store.ts                # Local JSON file storage
-│   └── types/
-│       └── index.ts                # Shared TypeScript types
+│   │   ├── handoff.go              # Handoff schema + validation
+│   │   └── store.go                # Local JSON file storage
+│   ├── types/
+│   │   └── types.go                # Shared types
+│   └── logging/
+│       └── logger.go               # slog setup + helpers
 ├── tests/
-│   ├── orchestrator.test.ts        # Orchestrator unit tests
-│   ├── router.test.ts              # Router unit tests
-│   └── mocks/                      # Mock adapters for testing
+│   ├── router_test.go
+│   ├── handoff_test.go
+│   └── workflow_test.go
 └── examples/
     └── feature-request.json        # Example task input
 ```
@@ -45,110 +46,123 @@ cooperations/
 
 ### Phase 1: Project Setup
 
-**Goal:** Initialize TypeScript project with all dependencies.
+**Goal:** Initialize Go project with CLI, config, and logging.
 
 **Tasks:**
-- [ ] Initialize npm project with TypeScript
-- [ ] Install dependencies: `commander` (CLI), `uuid`, `dotenv`, `zod`
-- [ ] Install AI SDKs: `@anthropic-ai/sdk`, `openai`
-- [ ] Configure tsconfig for Node.js ESM
-- [ ] Set up `.gitignore` and `.env.example`
+- [ ] `go mod init` and `go mod tidy`
+- [ ] Set up CLI framework (Cobra)
+- [ ] Add dotenv loading for local runs
+- [ ] Configure logging with `log/slog`
+- [ ] Create `.env.example` and `.gitignore`
 
 **Files:**
-- `package.json`
-- `tsconfig.json`
+- `go.mod`
 - `.gitignore`
 - `.env.example`
+- `cmd/coop/main.go`
 
 ---
 
 ### Phase 2: Type Definitions
 
-**Goal:** Define all TypeScript types and interfaces.
+**Goal:** Define all shared types and JSON structures.
 
 **Types to define:**
-```typescript
-// Enums
-enum Role { Architect, Implementer, Reviewer, Navigator }
-enum Model { ClaudeOpus, Codex }
+```go
+type Role string
+const (
+  RoleArchitect   Role = "architect"
+  RoleImplementer Role = "implementer"
+  RoleReviewer    Role = "reviewer"
+  RoleNavigator   Role = "navigator"
+)
 
-// Core interfaces
-interface Handoff {
-  task_id: string;
-  timestamp: string;
-  from_role: Role;
-  to_role: Role;
-  context: {
-    task_description: string;
-    requirements: string[];
-    constraints: string[];
-    files_in_scope: string[];
-  };
-  artifacts: {
-    design_doc?: string;
-    interfaces?: string[];
-    code?: string;
-    review_feedback?: string;
-    notes?: string;
-  };
-  metadata: {
-    tokens_used: number;
-    model: string;
-    duration_ms: number;
-  };
+type Model string
+const (
+  ModelClaude Model = "claude-opus-4-5"
+  ModelCodex  Model = "codex-5-2"
+)
+
+type Handoff struct {
+  TaskID    string    `json:"task_id" validate:"required"`
+  Timestamp string    `json:"timestamp" validate:"required"`
+  FromRole  Role      `json:"from_role" validate:"required"`
+  ToRole    Role      `json:"to_role" validate:"required"`
+  Context   HContext  `json:"context" validate:"required"`
+  Artifacts HArtifacts `json:"artifacts"`
+  Metadata  HMetadata `json:"metadata" validate:"required"`
 }
 
-interface Task {
-  id: string;
-  description: string;
-  created_at: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+type HContext struct {
+  TaskDescription string   `json:"task_description"`
+  Requirements    []string `json:"requirements"`
+  Constraints     []string `json:"constraints"`
+  FilesInScope    []string `json:"files_in_scope"`
 }
 
-interface AgentResponse {
-  content: string;
-  artifacts: Record<string, any>;
-  tokens_used: number;
-  duration_ms: number;
-  next_role?: Role;
+type HArtifacts struct {
+  DesignDoc      string   `json:"design_doc,omitempty"`
+  Interfaces     []string `json:"interfaces,omitempty"`
+  Code           string   `json:"code,omitempty"`
+  ReviewFeedback string   `json:"review_feedback,omitempty"`
+  Notes          string   `json:"notes,omitempty"`
 }
 
-interface WorkflowState {
-  task: Task;
-  handoffs: Handoff[];
-  current_role: Role;
-  review_cycles: number;
+type HMetadata struct {
+  TokensUsed int    `json:"tokens_used"`
+  Model      string `json:"model"`
+  DurationMS int64  `json:"duration_ms"`
+}
+
+type Task struct {
+  ID          string `json:"id"`
+  Description string `json:"description"`
+  CreatedAt   string `json:"created_at"`
+  Status      string `json:"status"` // pending|in_progress|completed|failed
+}
+
+type AgentResponse struct {
+  Content    string                 `json:"content"`
+  Artifacts  map[string]any         `json:"artifacts"`
+  TokensUsed int                    `json:"tokens_used"`
+  DurationMS int64                  `json:"duration_ms"`
+  NextRole   *Role                  `json:"next_role,omitempty"`
+}
+
+type WorkflowState struct {
+  Task         Task     `json:"task"`
+  Handoffs     []Handoff `json:"handoffs"`
+  CurrentRole  Role     `json:"current_role"`
+  ReviewCycles int      `json:"review_cycles"`
 }
 ```
 
 **Files:**
-- `src/types/index.ts`
+- `internal/types/types.go`
 
 ---
 
 ### Phase 3: Model Adapters
 
-**Goal:** Create adapters for both AI models with unified interface.
+**Goal:** Create adapters for both AI models with a unified interface.
 
 **Interface:**
-```typescript
-interface BaseAdapter {
-  model: Model;
-  complete(prompt: string, context?: string): Promise<AdapterResponse>;
+```go
+type Adapter interface {
+  Model() Model
+  Complete(ctx context.Context, prompt string, contextText string) (AdapterResponse, error)
 }
 
-interface AdapterResponse {
-  content: string;
-  tokens_used: number;
-  model: string;
+type AdapterResponse struct {
+  Content    string
+  TokensUsed int
+  Model      string
 }
 ```
 
 **Implementations:**
-| Adapter | Model | SDK |
-|---------|-------|-----|
-| `ClaudeAdapter` | Claude Opus 4.5 | `@anthropic-ai/sdk` |
-| `CodexAdapter` | Codex 5.2 | `openai` or custom |
+- `ClaudeAdapter`: Anthropic API (SDK or direct HTTP)
+- `CodexAdapter`: OpenAI/Codex API (SDK or direct HTTP)
 
 **Features:**
 - Environment variable config (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`)
@@ -156,10 +170,9 @@ interface AdapterResponse {
 - Response normalization
 
 **Files:**
-- `src/adapters/base.ts`
-- `src/adapters/claude.ts`
-- `src/adapters/codex.ts`
-- `src/adapters/index.ts`
+- `internal/adapters/adapter.go`
+- `internal/adapters/claude.go`
+- `internal/adapters/codex.go`
 
 ---
 
@@ -167,15 +180,11 @@ interface AdapterResponse {
 
 **Goal:** Implement role-specific agents with tailored prompts.
 
-**Base Agent:**
-```typescript
-abstract class BaseAgent {
-  role: Role;
-  model: Model;
-  adapter: BaseAdapter;
-  systemPrompt: string;
-
-  abstract execute(context: Handoff): Promise<AgentResponse>;
+**Agent interface:**
+```go
+type Agent interface {
+  Role() Role
+  Execute(ctx context.Context, handoff Handoff) (AgentResponse, error)
 }
 ```
 
@@ -183,24 +192,23 @@ abstract class BaseAgent {
 
 | Agent | Model | Responsibilities |
 |-------|-------|------------------|
-| `ArchitectAgent` | Claude | System design, API contracts, patterns |
-| `ImplementerAgent` | Codex | Code generation, refactoring |
-| `ReviewerAgent` | Claude | Code review, security, improvements |
-| `NavigatorAgent` | Either | Context tracking, next steps |
+| Architect | Claude | System design, API contracts, patterns |
+| Implementer | Codex | Code generation, refactoring |
+| Reviewer | Claude | Code review, security, improvements |
+| Navigator | Either | Context tracking, next steps |
 
 **System Prompts (summary):**
-- **Architect:** "You are a software architect. Design systems, define interfaces, make structural decisions."
-- **Implementer:** "You are a code implementer. Write clean, working code based on specifications."
-- **Reviewer:** "You are a code reviewer. Find bugs, security issues, suggest improvements."
-- **Navigator:** "You are a navigator. Track context, identify blockers, suggest next steps."
+- Architect: "You are a software architect. Design systems, define interfaces, make structural decisions."
+- Implementer: "You are a code implementer. Write clean, working code based on specifications."
+- Reviewer: "You are a code reviewer. Find bugs, security issues, suggest improvements."
+- Navigator: "You are a navigator. Track context, identify blockers, suggest next steps."
 
 **Files:**
-- `src/agents/base.ts`
-- `src/agents/architect.ts`
-- `src/agents/implementer.ts`
-- `src/agents/reviewer.ts`
-- `src/agents/navigator.ts`
-- `src/agents/index.ts`
+- `internal/agents/agent.go`
+- `internal/agents/architect.go`
+- `internal/agents/implementer.go`
+- `internal/agents/reviewer.go`
+- `internal/agents/navigator.go`
 
 ---
 
@@ -209,15 +217,14 @@ abstract class BaseAgent {
 **Goal:** Handle handoff serialization and local file storage.
 
 **Components:**
-
-1. **Handoff Schema** (using Zod)
-   - Validate incoming/outgoing handoffs
-   - Provide type-safe parsing
+1. **Handoff Validation**
+   - Use struct validation and manual checks
+   - Enforce required fields and timestamps
 
 2. **Context Store**
    - Storage location: `.cooperations/` in project root
    - Files: `tasks.json`, `handoffs/<task_id>.json`
-   - Operations: `save()`, `load()`, `list()`, `getByTaskId()`
+   - Operations: `Save()`, `Load()`, `List()`, `GetByTaskID()`
 
 **Directory Structure:**
 ```
@@ -229,9 +236,8 @@ abstract class BaseAgent {
 ```
 
 **Files:**
-- `src/context/handoff.ts`
-- `src/context/store.ts`
-- `src/context/index.ts`
+- `internal/context/handoff.go`
+- `internal/context/store.go`
 
 ---
 
@@ -250,22 +256,20 @@ abstract class BaseAgent {
 | (default) | Implementer |
 
 **Implementation:**
-```typescript
-class Router {
-  route(task: string): Role {
-    const lower = task.toLowerCase();
+```go
+type Router struct {}
 
-    if (/design|architect|plan|structure|api|interface/.test(lower)) {
-      return Role.Architect;
-    }
-    if (/review|check|verify|audit|security/.test(lower)) {
-      return Role.Reviewer;
-    }
-    if (/help|stuck|context|status|what|where/.test(lower)) {
-      return Role.Navigator;
-    }
-    // Default to Implementer
-    return Role.Implementer;
+func (r *Router) Route(task string) Role {
+  lower := strings.ToLower(task)
+  switch {
+  case regexp.MustCompile(`design|architect|plan|structure|api|interface`).MatchString(lower):
+    return RoleArchitect
+  case regexp.MustCompile(`review|check|verify|audit|security`).MatchString(lower):
+    return RoleReviewer
+  case regexp.MustCompile(`help|stuck|context|status|what|where`).MatchString(lower):
+    return RoleNavigator
+  default:
+    return RoleImplementer
   }
 }
 ```
@@ -273,7 +277,7 @@ class Router {
 **Logging:** Every routing decision is logged with rationale.
 
 **Files:**
-- `src/orchestrator/router.ts`
+- `internal/orchestrator/router.go`
 
 ---
 
@@ -281,79 +285,38 @@ class Router {
 
 **Goal:** Main orchestration logic coordinating all components.
 
-**Orchestrator Class:**
-```typescript
-class Orchestrator {
-  private router: Router;
-  private agents: Map<Role, BaseAgent>;
-  private store: ContextStore;
+**Orchestrator:**
+```go
+type Orchestrator struct {
+  router *Router
+  agents map[Role]Agent
+  store  *ContextStore
+}
 
-  async run(taskDescription: string): Promise<WorkflowResult> {
-    // 1. Create task
-    const task = this.createTask(taskDescription);
-
-    // 2. Route to initial role
-    const role = this.router.route(taskDescription);
-
-    // 3. Execute workflow
-    return this.executeWorkflow(task, role);
-  }
-
-  private async executeWorkflow(task: Task, initialRole: Role): Promise<WorkflowResult> {
-    let currentRole = initialRole;
-    let context = this.createInitialContext(task);
-    let reviewCycles = 0;
-    const maxReviewCycles = 3;
-
-    while (true) {
-      // Execute current agent
-      const agent = this.agents.get(currentRole);
-      const response = await agent.execute(context);
-
-      // Create handoff
-      const handoff = this.createHandoff(currentRole, response);
-      this.store.saveHandoff(task.id, handoff);
-
-      // Determine next step
-      if (response.next_role) {
-        // Check review cycle limit
-        if (response.next_role === Role.Reviewer) {
-          reviewCycles++;
-          if (reviewCycles > maxReviewCycles) {
-            return this.escalateToUser(task, context);
-          }
-        }
-        currentRole = response.next_role;
-        context = this.updateContext(context, handoff);
-      } else {
-        // Workflow complete
-        return this.completeWorkflow(task, context);
-      }
-    }
-  }
+func (o *Orchestrator) Run(ctx context.Context, taskDescription string) (WorkflowResult, error) {
+  task := o.createTask(taskDescription)
+  role := o.router.Route(taskDescription)
+  return o.executeWorkflow(ctx, task, role)
 }
 ```
 
 **Workflow Types:**
-
-1. **Feature Development:**
+1. Feature Development:
    ```
-   Architect → Implementer → Reviewer → (loop or complete)
+   Architect -> Implementer -> Reviewer -> (loop or complete)
    ```
-
-2. **Bug Fix:**
+2. Bug Fix:
    ```
-   Reviewer (analyze) → Architect (design fix) → Implementer → Reviewer (verify)
+   Reviewer (analyze) -> Architect (design fix) -> Implementer -> Reviewer (verify)
    ```
-
-3. **Code Review:**
+3. Code Review:
    ```
-   Reviewer → (complete with feedback)
+   Reviewer -> (complete with feedback)
    ```
 
 **Files:**
-- `src/orchestrator/index.ts`
-- `src/orchestrator/workflow.ts`
+- `internal/orchestrator/orchestrator.go`
+- `internal/orchestrator/workflow.go`
 
 ---
 
@@ -362,42 +325,40 @@ class Orchestrator {
 **Goal:** User-facing command-line interface.
 
 **Commands:**
-
 ```bash
 # Run a task
 coop run "Add a login button to the header"
 coop run --workflow=feature "Implement user authentication"
-coop run --workflow=bugfix "Fix the null pointer in UserService"
+coop run --workflow=bugfix "Fix the nil pointer in UserService"
 
 # View status
-coop status                    # Current/last task status
-coop status <task_id>          # Specific task status
+coop status
+coop status <task_id>
 
 # View history
-coop history                   # List all tasks
-coop history --limit=10        # Last 10 tasks
+coop history
+coop history --limit=10
 
 # Utility
-coop config                    # Show configuration
-coop config set <key> <value>  # Set config value
+coop config
+coop config set <key> <value>
 ```
 
 **Flags:**
-
 | Flag | Description |
 |------|-------------|
 | `--verbose`, `-v` | Show detailed output including prompts |
 | `--dry-run` | Show routing decision without executing |
 | `--workflow` | Force specific workflow type |
-| `--max-cycles` | Override max review cycles (default: 3) |
+| `--max-cycles` | Override max review cycles (default: 2) |
 
 **Output Format:**
 ```
 [ROUTE] Task routed to: Architect
 [AGENT] Architect executing...
-[HANDOFF] Architect → Implementer
+[HANDOFF] Architect -> Implementer
 [AGENT] Implementer executing...
-[HANDOFF] Implementer → Reviewer
+[HANDOFF] Implementer -> Reviewer
 [AGENT] Reviewer executing...
 [COMPLETE] Task completed successfully
 
@@ -405,7 +366,7 @@ Artifacts saved to: .cooperations/handoffs/abc123.json
 ```
 
 **Files:**
-- `src/index.ts`
+- `cmd/coop/main.go`
 
 ---
 
@@ -414,42 +375,19 @@ Artifacts saved to: .cooperations/handoffs/abc123.json
 **Goal:** Comprehensive test coverage.
 
 **Test Structure:**
-
 ```
-tests/
-├── unit/
-│   ├── router.test.ts          # Routing logic tests
-│   ├── handoff.test.ts         # Schema validation tests
-│   └── store.test.ts           # File storage tests
-├── integration/
-│   └── workflow.test.ts        # Full workflow with mocks
-└── mocks/
-    ├── claude.mock.ts          # Mock Claude adapter
-    └── codex.mock.ts           # Mock Codex adapter
+internal/orchestrator/router_test.go
+internal/context/handoff_test.go
+internal/context/store_test.go
+internal/orchestrator/workflow_test.go
+internal/adapters/*_test.go
 ```
 
 **Test Cases:**
-
-1. **Router Tests**
-   - Routes "design a user system" → Architect
-   - Routes "implement the login" → Implementer
-   - Routes "review this code" → Reviewer
-   - Routes unknown task → Implementer (default)
-
-2. **Handoff Tests**
-   - Valid handoff passes validation
-   - Missing required fields fails
-   - Serialization/deserialization roundtrip
-
-3. **Workflow Tests**
-   - Complete workflow executes all steps
-   - Review cycle limit triggers escalation
-   - Error in agent propagates correctly
-
-**Files:**
-- `tests/unit/*.test.ts`
-- `tests/integration/*.test.ts`
-- `tests/mocks/*.ts`
+1. Router tests (keyword routing + defaults)
+2. Handoff validation tests (required fields, roundtrip)
+3. Workflow tests (review cycle limit triggers escalation)
+4. Adapter tests (mocked HTTP responses)
 
 ---
 
@@ -457,49 +395,24 @@ tests/
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Language | TypeScript | Type safety, good async support, familiar ecosystem |
-| CLI Framework | Commander.js | Simple, well-documented, industry standard |
-| Validation | Zod | Runtime type checking, great TypeScript integration |
-| Testing | Vitest | Fast, ESM-native, Jest-compatible API |
-| State Storage | Local JSON | Simple, debuggable, git-friendly, per decisions |
-| Routing | Keyword regex | Simple, predictable, easy to debug and extend |
-| Review Loop | Max 3 cycles | Prevent infinite loops without being too restrictive |
+| Language | Go | Simple deployment, fast CLI, stdlib support |
+| CLI Framework | Cobra | Reliable, common Go CLI pattern |
+| Validation | go-playground/validator | Lightweight struct validation |
+| Testing | go test + testify (optional) | Standard tooling |
+| State Storage | Local JSON | Simple, debuggable, git-friendly |
+| Routing | Keyword regex | Simple, predictable, easy to extend |
+| Review Loop | Max 2 cycles | Prevents churn and deadlocks |
 
 ---
 
 ## Dependencies
 
-```json
-{
-  "name": "cooperations",
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "test": "vitest",
-    "lint": "eslint src/"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "openai": "^4.0.0",
-    "commander": "^12.0.0",
-    "uuid": "^9.0.0",
-    "dotenv": "^16.0.0",
-    "zod": "^3.22.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.0",
-    "tsx": "^4.0.0",
-    "vitest": "^1.0.0",
-    "@types/node": "^20.0.0",
-    "@types/uuid": "^9.0.0",
-    "eslint": "^8.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0"
-  }
-}
-```
+- `github.com/spf13/cobra` (CLI)
+- `github.com/spf13/viper` (config/env, optional)
+- `github.com/joho/godotenv` (local .env)
+- `github.com/google/uuid` (task IDs)
+- `github.com/go-playground/validator/v10` (validation)
+- `github.com/cenkalti/backoff/v4` (retries)
 
 ---
 
@@ -511,7 +424,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 CODEX_API_KEY=sk-...
 COOPERATIONS_DIR=.cooperations
 LOG_LEVEL=info
-MAX_REVIEW_CYCLES=3
+MAX_REVIEW_CYCLES=2
 ```
 
 ---
@@ -524,8 +437,8 @@ MAX_REVIEW_CYCLES=3
 | Different API response formats | Medium | Normalize in adapters, comprehensive tests |
 | Long-running tasks timeout | Medium | Add configurable timeout, show progress indicator |
 | Codex API changes | Medium | Abstract behind adapter interface for easy swap |
-| Infinite review loops | Low | Hard limit at 3 cycles, escalate to user |
-| Context size overflow | Low | Deferred; truncate if needed |
+| Infinite review loops | Low | Hard limit at 2 cycles, escalate to user |
+| Context size overflow | Low | Enforce token budgets, summarize older context |
 
 ---
 

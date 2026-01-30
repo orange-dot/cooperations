@@ -127,18 +127,26 @@ All open questions are tracked in `docs/OPEN_QUESTIONS.md` for refinement.
 
 - Orchestrator routes tasks with ≥ 90% correct role selection on a curated test set
 - End-to-end workflows complete successfully on ≥ 80% of defined scenarios
-- Median time-to-completion improves by ≥ 25% vs. single-model baseline
-- Cost per task is within a defined budget cap
+- Median time-to-completion improves by ≥ 20% vs. single-model baseline
+- Cost per task is ≤ 1.2x the single-model baseline
 - Audit logs are complete and reproducible for each run
 
 ## Orchestrator Decision Policy
 
 - **Default**: rule-based routing using task type, size, and risk classification
+- **Confidence**: heuristic score based on task size, file count, and risk keywords
 - **Adaptation**: allow mid-task handoffs when confidence drops or blockers persist
 - **Fallback**: when disagreement persists, escalate to Reviewer or Architect
 - **Transparency**: every routing decision is logged with its rationale
 
-## Conflict Resolution Policy (Draft)
+## Context Management and Limits
+
+- Use structured handoff summaries (JSON) that capture goals, constraints, files in scope, decisions, and next actions
+- Store large artifacts on disk and reference by path instead of embedding content
+- Enforce token budgets per handoff (e.g., 25% persistent context, 50% working set, 25% recent summary)
+- Prune by keeping the last two handoffs verbatim and summarizing older context into decisions + blockers
+
+## Conflict Resolution Policy
 
 | Situation | Primary Tiebreaker | Secondary |
 |----------|--------------------|-----------|
@@ -148,18 +156,38 @@ All open questions are tracked in `docs/OPEN_QUESTIONS.md` for refinement.
 | Style or formatting | Project standards | Reviewer |
 | Unclear requirements | Navigator | User |
 
+Decision protocol:
+- Prefer objective evidence (tests, logs, benchmarks) over preferences
+- If evidence is inconclusive, choose the safer/simpler option
+- Escalate ambiguous requirements to the user
+- Record the decision and rationale in the run log
+
+## Escalation Rules
+
+- Cap at two review loops per task
+- Escalate to the user when requirements are unclear or conflicting
+- Stop the loop if the same issue repeats twice without progress
+- Stop if the per-task budget is exceeded
+
 ## Minimal Viable Scope (MVP)
 
 - Task types: small feature additions, localized refactors, and bug fixes
 - Code size: single-file to small multi-file changes
-- Languages: define 1–2 initial languages (e.g., TypeScript, Python)
+- Languages: Go only
 - Interfaces: CLI-based orchestrator with file-based handoffs
+- Dependencies: local-only; no cloud services (Docker is allowed for local runs)
+
+## Baselines and Benchmarks
+
+- Maintain a local benchmark set of 10–20 tasks under `examples/`
+- Cover: small features, bug fixes, refactors, and docs in Go
+- Track expected outcomes and regression checks per task
 
 ## Rollout Plan (Phased)
 
 1. Local CLI MVP for single-repo usage
 2. Team pilot with shared configuration and logging
-3. CI/CD integration for automated review and checks
+3. Self-hosted CI/CD integration for automated review and checks (optional)
 
 ## Risks & Mitigations
 
@@ -167,6 +195,12 @@ All open questions are tracked in `docs/OPEN_QUESTIONS.md` for refinement.
 - **Context drift**: structured handoff templates + artifact tracking
 - **Review deadlocks**: cap review loops and define escalation paths
 - **Security leakage**: secret redaction and strict data handling policy
+
+## Security and Auditability
+
+- **Data handling**: local-only storage; never log secrets; redact `.env` values and common secret patterns
+- **Prompt injection**: treat repo content as untrusted; strip embedded instructions; require explicit user confirmation for risky actions
+- **Auditability**: write JSONL run logs with routing decisions, artifacts referenced by path, and input/output hashes
 
 ## Project Structure (Proposed)
 
@@ -189,11 +223,11 @@ cooperations/
 
 ## Next Steps
 
-1. Resolve open questions (especially Codex API access)
-2. Design orchestrator component (`/plan orchestrator`)
-3. Build model adapters for both APIs
-4. Implement core roles
-5. Create example workflows
+1. Design orchestrator component (`/plan orchestrator`)
+2. Build model adapters for both APIs
+3. Implement core roles and routing rules
+4. Create local benchmark tasks in `examples/`
+5. Add logging/redaction and audit trails
 6. Test and iterate
 
 ---

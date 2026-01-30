@@ -122,12 +122,12 @@ This document tracks unresolved questions from the strategy that need answers be
 
 ### Q8: Context Limits
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** Medium
 
 **Question:** How to compress or prune context between roles?
 
-**Note:** Out of scope for initial experiment. Will address if context limits become a problem.
+**Decision:** Use structured handoff summaries with strict token budgets. Persist artifacts on disk and reference by path, keep last two handoffs verbatim, and summarize older context into a short decision + blockers list.
 
 ---
 
@@ -135,34 +135,34 @@ This document tracks unresolved questions from the strategy that need answers be
 
 ### Q9: Conflict Resolution
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** High
 
 **Question:** When models disagree, what's the tiebreaker?
 
-**Note:** Out of scope for initial experiment. Draft policy exists in STRATEGY.md.
+**Decision:** Use a safety-first, role-based tiebreaker policy. Reviewer has veto on safety/security, Architect decides architecture, Implementer decides implementation details, Navigator routes requirement ambiguities to the user. If evidence is inconclusive, prefer the safer/simpler option and log the rationale.
 
 ---
 
 ### Q10: Routing Policy
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** Medium
 
 **Question:** Rule-based vs. learned vs. hybrid; how is confidence modeled?
 
-**Note:** Out of scope for initial experiment. Will use simple rule-based routing.
+**Decision:** Rule-based routing only (no learned components). Confidence is a simple heuristic using task size, file count, and risk keywords; low confidence triggers an Architect pass or a user clarification.
 
 ---
 
 ### Q11: Escalation Rules
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** Medium
 
 **Question:** When does the orchestrator hand off or stop a loop?
 
-**Note:** Out of scope for initial experiment.
+**Decision:** Limit to two review loops per task. Escalate to user when requirements are ambiguous or conflicts persist; stop when the same issue repeats twice without progress or budget is exceeded.
 
 ---
 
@@ -170,34 +170,34 @@ This document tracks unresolved questions from the strategy that need answers be
 
 ### Q12: Initial Scope
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** High
 
 **Question:** Single-file tasks? Full projects? Language focus?
 
-**Note:** Out of scope for initial experiment. Will define organically during development.
+**Decision:** Local, single-repo tasks; single-file to small multi-file changes. Initial language focus: Go. No cloud dependencies.
 
 ---
 
 ### Q13: Success Criteria
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** High
 
 **Question:** What metrics and thresholds define "better" than single-model?
 
-**Note:** Out of scope for initial experiment. Draft criteria exist in STRATEGY.md.
+**Decision:** Targets are: >= 80% successful completion on the benchmark set, >= 20% median time-to-completion improvement vs. single-model baseline, and <= 1.2x cost vs. baseline. All measured locally with reproducible logs.
 
 ---
 
 ### Q14: Baseline Tasks
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** Medium
 
 **Question:** What benchmark task set will be used for evaluation?
 
-**Note:** Out of scope for initial experiment.
+**Decision:** Create a local benchmark set of 10-20 tasks covering: small features, bug fixes, refactors, and documentation updates in Go. Store as fixtures in `examples/` with expected outcomes.
 
 ---
 
@@ -205,34 +205,34 @@ This document tracks unresolved questions from the strategy that need answers be
 
 ### Q15: Data Handling
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** High
 
 **Question:** How are secrets redacted and stored?
 
-**Note:** Out of scope for initial experiment. Will address before production use.
+**Decision:** Local-only storage. Secrets are never logged; redact known patterns and `.env` values before sending to models. Allowlist file access for context injection.
 
 ---
 
 ### Q16: Prompt Injection
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** High
 
 **Question:** What defenses or filters are required?
 
-**Note:** Out of scope for initial experiment. Will address before production use.
+**Decision:** Treat repository content as untrusted. Strip instructions from file content, separate system directives, and require explicit user confirmation before executing risky operations. Log and flag prompt-injection indicators.
 
 ---
 
 ### Q17: Auditability
 
-**Status:** ⚪ DEFERRED
+**Status:** 🟢 RESOLVED
 **Priority:** Medium
 
 **Question:** What logs and traces are required for compliance?
 
-**Note:** Out of scope for initial experiment.
+**Decision:** Write local JSONL logs per run with routing decisions, model outputs, artifacts referenced by path, and a hash of inputs/outputs to support reproducibility.
 
 ---
 
@@ -247,6 +247,16 @@ This document tracks unresolved questions from the strategy that need answers be
 | Q5: State Persistence | Local JSON files |
 | Q6: Context Sharing | Structured JSON files |
 | Q7: Artifact Format | JSON with defined schema |
+| Q8: Context Limits | Handoff summaries + token budgets |
+| Q9: Conflict Resolution | Role-based tiebreaker + safety-first veto |
+| Q10: Routing Policy | Rule-based + heuristic confidence |
+| Q11: Escalation Rules | Two review loops + stop/escalate |
+| Q12: Initial Scope | Local small tasks; Go only |
+| Q13: Success Criteria | 80% success, 20% faster, <= 1.2x cost |
+| Q14: Baseline Tasks | Local benchmark set in examples/ |
+| Q15: Data Handling | Local-only + secret redaction |
+| Q16: Prompt Injection | Treat repo content as untrusted |
+| Q17: Auditability | Local JSONL logs + hashes |
 
 ---
 
