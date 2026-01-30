@@ -9,6 +9,7 @@ const (
 	RoleImplementer Role = "implementer"
 	RoleReviewer    Role = "reviewer"
 	RoleNavigator   Role = "navigator"
+	RoleHuman       Role = "human"
 )
 
 // Model represents an AI model provider.
