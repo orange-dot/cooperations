@@ -17,12 +17,14 @@
 
 ## Why Combine?
 
-| Aspect | RLM | Milan | RVR (combined) |
-|--------|-----|-------|----------------|
-| Scaling | 10M+ tokens | Limited by context | 10M+ tokens |
-| Verification | Implicit (model decides) | Explicit (confidence) | Explicit + recursive |
-| Retry | None | When confidence < 0.8 | Configurable per task type |
-| Efficiency | High | Medium (double calls) | High (two-layer approach) |
+| Aspect | RLM (proven) | Milan (proven) | RVR (proposed concept) |
+|--------|--------------|----------------|------------------------|
+| Scaling | 10M+ tokens | Limited by context | 10M+ tokens (theoretical) |
+| Verification | Implicit (model decides) | Explicit (confidence) | Explicit + recursive (idea) |
+| Retry | None | When confidence < 0.8 | Configurable per task type (idea) |
+| Efficiency | High | Medium (double calls) | High (two-layer approach, theoretical) |
+
+> **Note:** RLM and Milan columns reflect documented results. RVR column represents proposed ideas combining both approaches - not yet validated.
 
 ---
 

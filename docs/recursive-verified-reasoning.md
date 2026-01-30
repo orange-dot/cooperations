@@ -10,19 +10,21 @@
 - **Mehanizam:** Model pise kod koji rekurzivno poziva sub-LLM u petljama
 - **Rezultat:** Skaliranje do 10M+ tokena, O(n²) semanticki rad
 
-### Dr. Milan Jovanovic (Twitter)
+### Dr. Milan Milanovic (Twitter)
 - **Kljucna ideja:** Eksplicitna meta-kognicija sa confidence scores
 - **Mehanizam:** VERIFY korak koji proverava logiku, cinjenice, bias
 - **Rezultat:** Retry mehanizam kad confidence padne ispod praga
 
 ## Zasto kombinovati?
 
-| Aspekt | RLM | Milan | RVR (kombinovano) |
-|--------|-----|-------|-------------------|
-| Skaliranje | 10M+ tokena | Ograniceno kontekstom | 10M+ tokena |
-| Verifikacija | Implicitna (model odlucuje) | Eksplicitna (confidence) | Eksplicitna + rekurzivna |
-| Retry | Nema | Kad confidence < 0.8 | Konfigurabilan po task tipu |
-| Efikasnost | Visoka | Srednja (dupli pozivi) | Visoka (dvoslojni pristup) |
+| Aspekt | RLM (dokazano) | Milan (dokazano) | RVR (predlozeni koncept) |
+|--------|----------------|------------------|--------------------------|
+| Skaliranje | 10M+ tokena | Ograniceno kontekstom | 10M+ tokena (teoretski) |
+| Verifikacija | Implicitna (model odlucuje) | Eksplicitna (confidence) | Eksplicitna + rekurzivna (ideja) |
+| Retry | Nema | Kad confidence < 0.8 | Konfigurabilan po task tipu (ideja) |
+| Efikasnost | Visoka | Srednja (dupli pozivi) | Visoka (dvoslojni pristup, teoretski) |
+
+> **Napomena:** RLM i Milan kolone odrazavaju dokumentovane rezultate. RVR kolona predstavlja predlozene ideje koje kombinuju oba pristupa - jos uvek nije validirano.
 
 ---
 
@@ -600,5 +602,5 @@ Kljucna prednost dvoslojnog pristupa je **efikasnost** - samo items koji zaista 
 ## Reference
 
 - **RLM:** MIT CSAIL, arXiv:2512.24601v2 "Recursive Language Models"
-- **Verification approach:** Dr. Milan Jovanovic (Twitter)
+- **Verification approach:** Dr. Milan Milanovic (Twitter)
 - **Kombinovani koncept:** RVR (Recursive Verified Reasoning)
