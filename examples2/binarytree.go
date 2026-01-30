@@ -253,7 +253,7 @@ func (t *BST[T]) String() string {
 	return b.String()
 }
 
-func main() {
+func demoBinaryTree() {
 	t := NewBST[int]()
 	for _, v := range []int{5, 3, 7, 2, 4, 6, 8} {
 		t.Insert(v)

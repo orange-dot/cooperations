@@ -183,7 +183,10 @@ func (tb *TokenBucket) tryConsumeOrComputeWait(n int, now time.Time) (time.Durat
 		seconds = 0
 	}
 
-	wait := time.Duration(seconds*float64(time.Second)) + time.Millisecond
+	wait := time.Duration(math.Ceil(seconds * float64(time.Second)))
+	if wait <= 0 {
+		wait = time.Nanosecond
+	}
 	return wait, false
 }
 
@@ -205,7 +208,7 @@ func (tb *TokenBucket) refillLocked(now time.Time) {
 	tb.lastRefill = now
 }
 
-func main() {
+func demoRateLimiter() {
 	limiter, err := NewTokenBucket(TokenBucketConfig{
 		Capacity:        10,
 		TokensPerSecond: 5,

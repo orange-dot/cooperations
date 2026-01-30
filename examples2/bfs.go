@@ -7,7 +7,8 @@ import (
 )
 
 type Graph struct {
-	adj map[string][]string
+	adj    map[string][]string
+	sorted bool
 }
 
 func NewGraph() *Graph {
@@ -30,11 +31,22 @@ func (g *Graph) AddEdge(from, to string) {
 	g.AddNode(from)
 	g.AddNode(to)
 	g.adj[from] = append(g.adj[from], to)
+	g.sorted = false
 }
 
 func (g *Graph) HasNode(id string) bool {
 	_, ok := g.adj[id]
 	return ok
+}
+
+func (g *Graph) sortAdjacency() {
+	if g.sorted {
+		return
+	}
+	for k := range g.adj {
+		sort.Strings(g.adj[k])
+	}
+	g.sorted = true
 }
 
 // BFS traverses the graph from start, visiting each reachable node at most once.
@@ -48,6 +60,8 @@ func (g *Graph) BFS(start string, visit func(node string) error) ([]string, erro
 	if !g.HasNode(start) {
 		return nil, fmt.Errorf("start node %q not found", start)
 	}
+
+	g.sortAdjacency()
 
 	visited := make(map[string]bool, len(g.adj))
 	order := make([]string, 0, len(g.adj))
@@ -69,10 +83,7 @@ func (g *Graph) BFS(start string, visit func(node string) error) ([]string, erro
 			}
 		}
 
-		neighbors := append([]string(nil), g.adj[u]...) // copy to avoid mutating graph
-		sort.Strings(neighbors)
-
-		for _, v := range neighbors {
+		for _, v := range g.adj[u] {
 			if v == "" {
 				continue
 			}
@@ -86,7 +97,7 @@ func (g *Graph) BFS(start string, visit func(node string) error) ([]string, erro
 	return order, nil
 }
 
-func main() {
+func demoBFS() {
 	g := NewGraph()
 	g.AddEdge("A", "B")
 	g.AddEdge("A", "C")

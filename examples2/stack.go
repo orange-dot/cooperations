@@ -71,7 +71,7 @@ func (s *Stack[T]) Clear() {
 	s.elements = nil
 }
 
-func main() {
+func demoStack() {
 	s := NewStack[int]()
 	fmt.Println("Push 1, 2, 3")
 	s.Push(1)

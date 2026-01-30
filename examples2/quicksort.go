@@ -68,7 +68,7 @@ func medianOfThreeIndex(a []int, i, j, k int) int {
 	return j
 }
 
-func main() {
+func demoQuickSort() {
 	data := []int{9, 3, 7, 1, 1, 2, 8, 5, 4, 6, 0}
 	fmt.Println("before:", data)
 	QuickSort(data)

@@ -18,11 +18,13 @@ type Queue[T any] interface {
 // SliceQueue is a non-thread-safe implementation.
 type SliceQueue[T any] struct {
 	items []T
+	head  int
 }
 
 // SafeQueue is a thread-safe implementation.
 type SafeQueue[T any] struct {
 	items []T
+	head  int
 	mu    sync.RWMutex
 }
 
@@ -43,31 +45,54 @@ func (q *SliceQueue[T]) Enqueue(item T) {
 }
 
 func (q *SliceQueue[T]) Dequeue() (T, bool) {
+	var zero T
 	if len(q.items) == 0 {
-		var zero T
 		return zero, false
 	}
-	item := q.items[0]
-	var zero T
-	q.items[0] = zero
-	q.items = q.items[1:]
+	if q.head >= len(q.items) {
+		q.items = nil
+		q.head = 0
+		return zero, false
+	}
+
+	item := q.items[q.head]
+	q.items[q.head] = zero
+	q.head++
+
+	// Compact occasionally to avoid unbounded slice growth.
+	if q.head > 1024 && q.head*2 >= len(q.items) {
+		q.items = append([]T(nil), q.items[q.head:]...)
+		q.head = 0
+	} else if q.head >= len(q.items) {
+		q.items = nil
+		q.head = 0
+	}
+
 	return item, true
 }
 
 func (q *SliceQueue[T]) Peek() (T, bool) {
+	var zero T
 	if len(q.items) == 0 {
-		var zero T
 		return zero, false
 	}
-	return q.items[0], true
+	if q.head >= len(q.items) {
+		q.items = nil
+		q.head = 0
+		return zero, false
+	}
+	return q.items[q.head], true
 }
 
 func (q *SliceQueue[T]) Len() int {
-	return len(q.items)
+	if q.head >= len(q.items) {
+		return 0
+	}
+	return len(q.items) - q.head
 }
 
 func (q *SliceQueue[T]) IsEmpty() bool {
-	return len(q.items) == 0
+	return q.Len() == 0
 }
 
 func (q *SliceQueue[T]) Clear() {
@@ -76,6 +101,7 @@ func (q *SliceQueue[T]) Clear() {
 		q.items[i] = zero
 	}
 	q.items = nil
+	q.head = 0
 }
 
 // SafeQueue implementation
@@ -89,31 +115,51 @@ func (q *SafeQueue[T]) Enqueue(item T) {
 func (q *SafeQueue[T]) Dequeue() (T, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	var zero T
 	if len(q.items) == 0 {
-		var zero T
 		return zero, false
 	}
-	item := q.items[0]
-	var zero T
-	q.items[0] = zero
-	q.items = q.items[1:]
+	if q.head >= len(q.items) {
+		q.items = nil
+		q.head = 0
+		return zero, false
+	}
+
+	item := q.items[q.head]
+	q.items[q.head] = zero
+	q.head++
+
+	if q.head > 1024 && q.head*2 >= len(q.items) {
+		q.items = append([]T(nil), q.items[q.head:]...)
+		q.head = 0
+	} else if q.head >= len(q.items) {
+		q.items = nil
+		q.head = 0
+	}
+
 	return item, true
 }
 
 func (q *SafeQueue[T]) Peek() (T, bool) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
+	var zero T
 	if len(q.items) == 0 {
-		var zero T
 		return zero, false
 	}
-	return q.items[0], true
+	if q.head >= len(q.items) {
+		return zero, false
+	}
+	return q.items[q.head], true
 }
 
 func (q *SafeQueue[T]) Len() int {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
-	return len(q.items)
+	if q.head >= len(q.items) {
+		return 0
+	}
+	return len(q.items) - q.head
 }
 
 func (q *SafeQueue[T]) IsEmpty() bool {
@@ -128,9 +174,10 @@ func (q *SafeQueue[T]) Clear() {
 		q.items[i] = zero
 	}
 	q.items = nil
+	q.head = 0
 }
 
-func main() {
+func demoQueue() {
 	// Demo: SliceQueue
 	fmt.Println("=== SliceQueue ===")
 	q := NewQueue[int]()

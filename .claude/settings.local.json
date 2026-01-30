@@ -58,7 +58,9 @@
       "Bash(do echo -n \"$f: \")",
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Bash(python3 -c \" import json, sys data = json.load\\(sys.stdin\\) total_tokens = 0 total_duration = 0 handoffs = [] for h in data: tokens = h.get\\(''metadata'', {}\\).get\\(''tokens_used'', 0\\) duration = h.get\\(''metadata'', {}\\).get\\(''duration_ms'', 0\\) model = h.get\\(''metadata'', {}\\).get\\(''model'', ''unknown''\\) fr = h.get\\(''from_role'', ''?''\\) to = h.get\\(''to_role'', ''?''\\) total_tokens += tokens total_duration += duration handoffs.append\\(f''{fr} -> {to} \\({model}, {tokens} tok\\)''\\) print\\(f''Handoffs: {len\\(data\\)}''\\) print\\(f''Total tokens: {total_tokens}''\\) print\\(f''Total duration: {total_duration/1000:.1f}s''\\) for h in handoffs: print\\(f'' {h}''\\) \" done)"
+      "Bash(python3 -c \" import json, sys data = json.load\\(sys.stdin\\) total_tokens = 0 total_duration = 0 handoffs = [] for h in data: tokens = h.get\\(''metadata'', {}\\).get\\(''tokens_used'', 0\\) duration = h.get\\(''metadata'', {}\\).get\\(''duration_ms'', 0\\) model = h.get\\(''metadata'', {}\\).get\\(''model'', ''unknown''\\) fr = h.get\\(''from_role'', ''?''\\) to = h.get\\(''to_role'', ''?''\\) total_tokens += tokens total_duration += duration handoffs.append\\(f''{fr} -> {to} \\({model}, {tokens} tok\\)''\\) print\\(f''Handoffs: {len\\(data\\)}''\\) print\\(f''Total tokens: {total_tokens}''\\) print\\(f''Total duration: {total_duration/1000:.1f}s''\\) for h in handoffs: print\\(f'' {h}''\\) \" done)",
+      "Bash(for f in *.go)",
+      "Bash(do echo \"=== $f ===\")"
     ]
   }
 }

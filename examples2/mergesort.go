@@ -95,7 +95,7 @@ func mergeRange(nums, buf []int, lo, mid, hi int) {
 	copy(nums[lo:hi], buf[lo:hi])
 }
 
-func main() {
+func demoMergeSort() {
 	rand.Seed(time.Now().UnixNano())
 
 	nums := make([]int, 20)

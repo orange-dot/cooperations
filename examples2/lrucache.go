@@ -160,7 +160,7 @@ func (c *Cache[K, V]) removeElement(ele *list.Element) {
 	c.ll.Remove(ele)
 }
 
-func main() {
+func demoLRUCache() {
 	cache, err := New[string, int](2)
 	if err != nil {
 		panic(err)

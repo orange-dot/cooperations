@@ -126,7 +126,7 @@ func right(i int) int  { return 2*i + 2 }
 
 // ---- demo ----
 
-func main() {
+func demoHeap() {
 	h := NewMinHeap(0)
 
 	for _, v := range []int{5, 3, 8, 1, 2, 9, 7} {
