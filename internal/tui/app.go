@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"cooperations/internal/tui/session"
 	"cooperations/internal/tui/stream"
 	"cooperations/internal/tui/widgets"
 	"github.com/charmbracelet/bubbles/key"
@@ -17,6 +18,20 @@ type tickMsg time.Time
 // streamMsg wraps stream events for the update loop.
 type streamMsg struct {
 	event interface{}
+}
+
+type sessionSavedMsg struct {
+	ID  string
+	Err error
+}
+
+type sessionLoadedMsg struct {
+	Session *session.Session
+	Err     error
+}
+
+type replayDoneMsg struct {
+	Err error
 }
 
 // Init initializes the Bubble Tea program.
@@ -123,6 +138,24 @@ func listenForStreams(s *stream.WorkflowStream) tea.Cmd {
 				return nil
 			}
 			return streamMsg{event: err}
+
+		case hookNotify, ok := <-s.HookNotify:
+			if !ok {
+				return nil
+			}
+			return streamMsg{event: hookNotify}
+
+		case rvrEvent, ok := <-s.RVR:
+			if !ok {
+				return nil
+			}
+			return streamMsg{event: rvrEvent}
+
+		case rvrResult, ok := <-s.RVRResult:
+			if !ok {
+				return nil
+			}
+			return streamMsg{event: rvrResult}
 		}
 	}
 }
@@ -156,6 +189,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Keep listening for more stream events
 		cmds = append(cmds, listenForStreams(m.Stream))
+
+	case sessionSavedMsg:
+		if msg.Err != nil {
+			m.ShowToast(fmt.Sprintf("Session save failed: %v", msg.Err), widgets.ToastLevelError)
+		} else {
+			m.ShowToast(fmt.Sprintf("Session saved (%s)", msg.ID), widgets.ToastLevelSuccess)
+			m.AddLogEntry(widgets.LogInfo, "session", fmt.Sprintf("Saved %s", msg.ID))
+		}
+
+	case sessionLoadedMsg:
+		if msg.Err != nil {
+			m.ShowToast(fmt.Sprintf("Session load failed: %v", msg.Err), widgets.ToastLevelError)
+			break
+		}
+		if msg.Session != nil {
+			m.SessionID = msg.Session.ID
+			m.SessionName = msg.Session.Name
+			m.CurrentTask = msg.Session.Task
+			m.ShowToast(fmt.Sprintf("Session loaded (%s)", msg.Session.ID), widgets.ToastLevelSuccess)
+			m.AddLogEntry(widgets.LogInfo, "session", fmt.Sprintf("Loaded %s", msg.Session.ID))
+		}
+
+	case replayDoneMsg:
+		m.ReplayActive = false
+		if msg.Err != nil {
+			m.ShowToast(fmt.Sprintf("Replay failed: %v", msg.Err), widgets.ToastLevelError)
+			break
+		}
+		if m.SessionManager != nil && m.SessionManager.Current != nil {
+			switch strings.ToLower(m.SessionManager.Current.Status) {
+			case "complete":
+				m.SetWorkflowState(WorkflowComplete)
+			case "error":
+				m.SetWorkflowState(WorkflowError)
+			case "paused":
+				m.SetWorkflowState(WorkflowPaused)
+			default:
+				m.SetWorkflowState(WorkflowRunning)
+			}
+		}
+		m.ShowToast("Replay finished", widgets.ToastLevelSuccess)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -171,6 +245,18 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	// Handle search mode
 	if m.SearchMode {
 		return m.handleSearchInput(msg)
+	}
+
+	// Search navigation (works in dashboard and focus)
+	if (m.ViewMode == ViewModeDashboard || m.ViewMode == ViewModeFocus) && m.SearchQuery != "" {
+		switch {
+		case key.Matches(msg, m.Keys.NextResult):
+			m.jumpSearch(1)
+			return nil
+		case key.Matches(msg, m.Keys.PrevResult):
+			m.jumpSearch(-1)
+			return nil
+		}
 	}
 
 	// Handle view-specific keys
@@ -289,6 +375,9 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, m.Keys.Pause):
 		if m.WorkflowState == WorkflowRunning {
 			m.SetWorkflowState(WorkflowPaused)
+			if m.SessionManager != nil {
+				m.SessionManager.SetStatus("paused")
+			}
 			m.ShowToast("Workflow paused", widgets.ToastLevelInfo)
 			if m.Stream != nil {
 				select {
@@ -298,6 +387,9 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 			}
 		} else if m.WorkflowState == WorkflowPaused {
 			m.SetWorkflowState(WorkflowRunning)
+			if m.SessionManager != nil {
+				m.SessionManager.SetStatus("running")
+			}
 			m.ShowToast("Workflow resumed", widgets.ToastLevelInfo)
 			if m.Stream != nil {
 				select {
@@ -307,9 +399,90 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
+	case key.Matches(msg, m.Keys.NextStep):
+		if m.WorkflowState == WorkflowPaused || m.WorkflowState == WorkflowRunning {
+			// Send step signal - advances one agent then auto-pauses
+			if m.Stream != nil {
+				m.Stream.SendControl(stream.ControlStep, "user requested step")
+			}
+			m.SetWorkflowState(WorkflowRunning)
+			if m.SessionManager != nil {
+				m.SessionManager.SetStatus("stepping")
+			}
+			m.ShowToast("Stepping to next agent...", widgets.ToastLevelInfo)
+		} else {
+			m.ShowToast("No workflow running", widgets.ToastLevelInfo)
+		}
+
+	case key.Matches(msg, m.Keys.Skip):
+		if m.WorkflowState == WorkflowRunning || m.WorkflowState == WorkflowPaused {
+			// Show confirmation before skipping
+			m.ShowConfirm("Skip Agent",
+				fmt.Sprintf("Skip current agent (%s) and advance to next?", m.CurrentAgent),
+				false)
+			m.PendingAction = "skip"
+		} else {
+			m.ShowToast("No workflow running", widgets.ToastLevelWarning)
+		}
+
+	case key.Matches(msg, m.Keys.Kill):
+		if m.WorkflowState == WorkflowRunning || m.WorkflowState == WorkflowPaused {
+			// Show confirmation before killing
+			m.ShowConfirm("Kill Workflow",
+				"This will immediately abort the workflow. Continue?",
+				true)
+			m.PendingAction = "kill"
+		} else {
+			m.ShowToast("No workflow to kill", widgets.ToastLevelWarning)
+		}
+
 	case key.Matches(msg, m.Keys.Search):
 		m.SearchMode = true
 		m.SearchQuery = ""
+
+	case key.Matches(msg, m.Keys.ClearSearch):
+		if m.ViewMode == ViewModeDashboard && m.SearchQuery != "" {
+			m.runSearch("")
+			m.SearchMode = false
+		}
+
+	case key.Matches(msg, m.Keys.SaveSession):
+		if m.SessionManager == nil {
+			m.ShowToast("Session manager unavailable", widgets.ToastLevelWarning)
+			return nil
+		}
+		if m.CurrentTask != "" {
+			m.ensureSession(m.CurrentTask)
+		}
+		return m.saveSessionCmd()
+
+	case key.Matches(msg, m.Keys.OpenSession):
+		if m.SessionManager == nil {
+			m.ShowToast("Session manager unavailable", widgets.ToastLevelWarning)
+			return nil
+		}
+		dialog := widgets.NewInputDialog("Open session", "Enter session ID", m.Width/2)
+		dialog.Placeholder = "session_..."
+		m.InputDialog = &dialog
+		m.DecisionDialog = nil
+		m.ConfirmDialog = nil
+		m.InputMode = InputModeOpenSession
+		m.ShowDialog = true
+
+	case key.Matches(msg, m.Keys.Replay):
+		if m.SessionManager == nil {
+			m.ShowToast("Session manager unavailable", widgets.ToastLevelWarning)
+			return nil
+		}
+		if m.SessionManager.Current == nil {
+			m.ShowToast("Load a session first (Ctrl+O)", widgets.ToastLevelWarning)
+			return nil
+		}
+		m.ReplayActive = true
+		m.resetForReplay()
+		m.SetWorkflowState(WorkflowRunning)
+		m.ShowToast(fmt.Sprintf("Replaying %s", m.SessionManager.Current.ID), widgets.ToastLevelInfo)
+		return m.replaySessionCmd()
 
 	case key.Matches(msg, m.Keys.Open):
 		if m.Dashboard != nil && m.Dashboard.ActivePanel == 2 && m.Dashboard.RightMode == 1 {
@@ -318,10 +491,35 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, m.Keys.CopyPath):
 		if m.Dashboard != nil && m.Dashboard.ActivePanel == 2 && m.Dashboard.RightMode == 1 {
 			path := m.Dashboard.FileTree.GetSelected()
-			if path != "" {
-				m.ShowToast("Selected: "+path, widgets.ToastLevelInfo)
+			if path == "" {
+				m.ShowToast("No file selected", widgets.ToastLevelWarning)
+				return nil
+			}
+			absPath := m.ResolvePath(path)
+			if err := copyToClipboard(absPath); err != nil {
+				m.ShowToast("Copy failed: "+err.Error(), widgets.ToastLevelWarning)
+			} else {
+				m.ShowToast("Copied: "+path, widgets.ToastLevelSuccess)
 			}
 		}
+
+	case key.Matches(msg, m.Keys.Edit):
+		if m.Dashboard != nil && m.Dashboard.ActivePanel == 2 && m.Dashboard.RightMode == 1 {
+			path := m.Dashboard.FileTree.GetSelected()
+			if path == "" {
+				m.ShowToast("No file selected", widgets.ToastLevelWarning)
+				return nil
+			}
+			absPath := m.ResolvePath(path)
+			if err := openInEditor(absPath); err != nil {
+				m.ShowToast("Open failed: "+err.Error(), widgets.ToastLevelWarning)
+			} else {
+				m.ShowToast("Opened: "+path, widgets.ToastLevelInfo)
+			}
+		}
+
+	case key.Matches(msg, m.Keys.Refresh):
+		m.RefreshFileTree()
 	}
 
 	return nil
@@ -384,30 +582,74 @@ func (m *Model) handleDecisionDialog(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleConfirmDialog(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, m.Keys.Cancel):
+		m.PendingAction = ""
 		m.HideDialog()
 	case msg.String() == "y":
 		m.ConfirmDialog.Selected = 1
-		m.HideDialog()
-		return tea.Quit
+		return m.executeConfirmedAction()
 	case msg.String() == "n":
+		m.PendingAction = ""
 		m.HideDialog()
 	case key.Matches(msg, m.Keys.Left), key.Matches(msg, m.Keys.Right), key.Matches(msg, m.Keys.Tab):
 		m.ConfirmDialog.Toggle()
 	case key.Matches(msg, m.Keys.Confirm):
-		isYes := m.ConfirmDialog.IsYes()
-		m.HideDialog()
-		if isYes {
-			return tea.Quit
+		if m.ConfirmDialog.IsYes() {
+			return m.executeConfirmedAction()
 		}
+		m.PendingAction = ""
+		m.HideDialog()
 	}
+	return nil
+}
+
+// executeConfirmedAction handles the action after confirm dialog is accepted.
+func (m *Model) executeConfirmedAction() tea.Cmd {
+	action := m.PendingAction
+	m.PendingAction = ""
+	m.HideDialog()
+
+	switch action {
+	case "skip":
+		if m.Stream != nil {
+			m.Stream.SendControl(stream.ControlSkip, "user skipped agent")
+		}
+		m.ShowToast("Skipping current agent...", widgets.ToastLevelWarning)
+		return nil
+
+	case "kill":
+		if m.Stream != nil {
+			m.Stream.SendControl(stream.ControlKill, "user killed workflow")
+		}
+		m.SetWorkflowState(WorkflowError)
+		m.ShowToast("Workflow killed", widgets.ToastLevelError)
+		return nil
+
+	case "quit", "":
+		// Default behavior - quit
+		return tea.Quit
+	}
+
 	return nil
 }
 
 func (m *Model) handleInputDialog(msg tea.KeyMsg) tea.Cmd {
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.InputMode == InputModeOpenSession {
+			m.HideDialog()
+			return nil
+		}
 		m.sendDecision(stream.DecisionReject, "edit cancelled", "")
 	case tea.KeyEnter:
+		if m.InputMode == InputModeOpenSession {
+			sessionID := strings.TrimSpace(m.InputDialog.Value)
+			if sessionID == "" {
+				m.ShowToast("Session ID required", widgets.ToastLevelWarning)
+				return nil
+			}
+			m.HideDialog()
+			return m.loadSessionCmd(sessionID)
+		}
 		action := m.PendingDecisionAction
 		if action == "" {
 			action = stream.DecisionEdit
@@ -448,6 +690,14 @@ func (m *Model) sendDecision(action stream.DecisionAction, comment, edited strin
 		default:
 		}
 	}
+	if m.SessionManager != nil {
+		m.SessionManager.RecordEvent("decision_response", stream.HumanDecision{
+			RequestID: m.PendingDecision.ID,
+			Action:    action,
+			Comment:   comment,
+			Edited:    edited,
+		})
+	}
 	m.PendingDecision = nil
 	m.PendingDecisionAction = ""
 	m.HideDialog()
@@ -467,20 +717,25 @@ func decisionActionFromLabel(label string) stream.DecisionAction {
 
 // handleSearchInput handles input in search mode.
 func (m *Model) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
+	switch msg.Type {
+	case tea.KeyEsc:
 		m.SearchMode = false
-		m.SearchQuery = ""
-	case "enter":
+		m.runSearch("")
+	case tea.KeyEnter:
 		m.SearchMode = false
-		// TODO: Perform search
-	case "backspace":
+		found := m.runSearch(m.SearchQuery)
+		if found {
+			m.ShowToast(fmt.Sprintf("Found %d matches", len(m.SearchResults)), widgets.ToastLevelInfo)
+		} else if m.SearchQuery != "" {
+			m.ShowToast("No matches", widgets.ToastLevelWarning)
+		}
+	case tea.KeyBackspace:
 		if len(m.SearchQuery) > 0 {
 			m.SearchQuery = m.SearchQuery[:len(m.SearchQuery)-1]
 		}
-	default:
-		if len(msg.String()) == 1 {
-			m.SearchQuery += msg.String()
+	case tea.KeyRunes:
+		for _, r := range msg.Runes {
+			m.SearchQuery += string(r)
 		}
 	}
 	return nil
@@ -524,6 +779,10 @@ func (m *Model) handleFocusKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.Focus != nil {
 			m.Focus.Mode = 2 // Diff mode
 		}
+
+	case key.Matches(msg, m.Keys.Search):
+		m.SearchMode = true
+		m.SearchQuery = ""
 
 	case key.Matches(msg, m.Keys.Up):
 		m.scrollFocusUp(1)
@@ -722,11 +981,165 @@ func (m *Model) scrollFocusDown(lines int) {
 	}
 }
 
+func (m *Model) stepKeyForName(name string) (key, label string, isRole bool) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", "", false
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "architect", "implementer", "reviewer", "navigator", "human":
+		return "role:" + lower, titleCase(lower), true
+	case "user":
+		return "role:user", "User", true
+	default:
+		return "stage:" + lower, trimmed, false
+	}
+}
+
+func titleCase(value string) string {
+	if value == "" {
+		return value
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func (m *Model) ensureWorkflowStep(key, name, description, agent string) int {
+	if m.Dashboard == nil || m.Dashboard.WorkflowSteps == nil {
+		return -1
+	}
+	if m.WorkflowStepIndex == nil {
+		m.WorkflowStepIndex = map[string]int{}
+	}
+	if idx, ok := m.WorkflowStepIndex[key]; ok {
+		step := &m.Dashboard.WorkflowSteps.Steps[idx]
+		if name != "" {
+			step.Name = name
+		}
+		if description != "" {
+			step.Description = description
+		}
+		if agent != "" {
+			step.Agent = agent
+		}
+		return idx
+	}
+
+	m.Dashboard.WorkflowSteps.AddStep(name, description, agent)
+	idx := len(m.Dashboard.WorkflowSteps.Steps) - 1
+	m.WorkflowStepIndex[key] = idx
+	m.TotalSteps = len(m.Dashboard.WorkflowSteps.Steps)
+	return idx
+}
+
+func (m *Model) updateWorkflowFromProgress(update stream.ProgressUpdate) {
+	if m.Dashboard == nil || m.Dashboard.WorkflowSteps == nil {
+		return
+	}
+
+	stage := strings.TrimSpace(update.Stage)
+	key, label, isRole := m.stepKeyForName(stage)
+	if key == "" {
+		if update.Message == "" {
+			return
+		}
+		key = "message:" + strings.ToLower(update.Message)
+		label = update.Message
+	}
+
+	idx := m.ensureWorkflowStep(key, label, update.Message, "")
+	if idx < 0 {
+		return
+	}
+
+	if isRole {
+		m.Dashboard.WorkflowSteps.Steps[idx].Agent = label
+	}
+	if update.Message != "" {
+		m.Dashboard.WorkflowSteps.Steps[idx].Description = update.Message
+	}
+
+	isComplete := strings.EqualFold(stage, "complete") || update.Percent >= 100
+	if isComplete {
+		current := m.Dashboard.WorkflowSteps.CurrentStep()
+		if current != -1 && current != idx {
+			m.Dashboard.WorkflowSteps.SetStatus(current, widgets.StepComplete)
+		}
+		m.Dashboard.WorkflowSteps.SetStatus(idx, widgets.StepComplete)
+		return
+	}
+
+	current := m.Dashboard.WorkflowSteps.CurrentStep()
+	if current != -1 && current != idx {
+		m.Dashboard.WorkflowSteps.SetStatus(current, widgets.StepComplete)
+	}
+	m.Dashboard.WorkflowSteps.SetStatus(idx, widgets.StepRunning)
+}
+
+func (m *Model) updateWorkflowFromHandoff(event stream.HandoffEvent) {
+	if m.Dashboard == nil || m.Dashboard.WorkflowSteps == nil {
+		return
+	}
+
+	if event.From != "" && strings.ToLower(event.From) != "user" {
+		key, label, _ := m.stepKeyForName(event.From)
+		if key == "" {
+			key = "role:" + strings.ToLower(event.From)
+			label = titleCase(event.From)
+		}
+		idx := m.ensureWorkflowStep(key, label, "", label)
+		if idx >= 0 {
+			m.Dashboard.WorkflowSteps.SetStatus(idx, widgets.StepComplete)
+		}
+	}
+
+	if event.To != "" {
+		key, label, _ := m.stepKeyForName(event.To)
+		if key == "" {
+			key = "role:" + strings.ToLower(event.To)
+			label = titleCase(event.To)
+		}
+		idx := m.ensureWorkflowStep(key, label, event.Reason, label)
+		if idx >= 0 {
+			if event.Reason != "" {
+				m.Dashboard.WorkflowSteps.Steps[idx].Description = event.Reason
+			}
+			m.Dashboard.WorkflowSteps.SetStatus(idx, widgets.StepRunning)
+		}
+	}
+}
+
+func extractTaskFromProgress(message string) string {
+	lower := strings.ToLower(message)
+	const runningPrefix = "running task:"
+	const startingPrefix = "starting workflow for task:"
+	switch {
+	case strings.HasPrefix(lower, runningPrefix):
+		return strings.TrimSpace(message[len(runningPrefix):])
+	case strings.HasPrefix(lower, startingPrefix):
+		return strings.TrimSpace(message[len(startingPrefix):])
+	default:
+		return ""
+	}
+}
+
 // handleStreamEvent processes events from the workflow stream.
 func (m *Model) handleStreamEvent(event interface{}) tea.Cmd {
+	if progress, ok := event.(stream.ProgressUpdate); ok {
+		if task := extractTaskFromProgress(progress.Message); task != "" {
+			m.CurrentTask = task
+		}
+	}
+
+	if m.CurrentTask != "" {
+		m.ensureSession(m.CurrentTask)
+	}
+	m.recordStreamEvent(event)
+
 	switch e := event.(type) {
 	case stream.TokenChunk:
 		m.AppendStreamingContent(e.Token)
+		m.SetWorkflowState(WorkflowRunning)
 		if e.AgentRole != "" && e.AgentRole != m.CurrentAgent {
 			m.SetCurrentAgent(e.AgentRole, "Generating response...")
 		}
@@ -744,6 +1157,8 @@ func (m *Model) handleStreamEvent(event interface{}) tea.Cmd {
 
 	case stream.ProgressUpdate:
 		m.UpdateProgress(e.Percent, e.Message)
+		m.SetWorkflowState(WorkflowRunning)
+		m.updateWorkflowFromProgress(e)
 
 	case stream.HandoffEvent:
 		if m.Dashboard != nil {
@@ -756,6 +1171,7 @@ func (m *Model) handleStreamEvent(event interface{}) tea.Cmd {
 				m.SetCurrentAgent(e.To, e.Reason)
 			}
 		}
+		m.updateWorkflowFromHandoff(e)
 		m.AddLogEntry(widgets.LogInfo, e.From, fmt.Sprintf("Handoff to %s: %s", e.To, e.Reason))
 
 	case stream.CodeUpdate:
@@ -814,7 +1230,6 @@ func (m *Model) handleStreamEvent(event interface{}) tea.Cmd {
 		m.AddLogEntry(level, e.AgentRole, e.Message)
 
 	case stream.MetricsSnapshot:
-		m.UpdateMetrics(e.PromptTokens, e.CompletionTokens)
 		m.UpdateMetricsSnapshot(e)
 
 	case stream.ThinkingUpdate:
@@ -853,15 +1268,55 @@ func (m *Model) handleStreamEvent(event interface{}) tea.Cmd {
 	case stream.SessionEvent:
 		m.AddLogEntry(widgets.LogInfo, "session", fmt.Sprintf("%s (%s)", e.Type, e.SessionID))
 
+	case stream.HookNotification:
+		// Update UI state based on hook
+		m.CanSkip = e.CanSkip
+		if e.Paused {
+			m.SetWorkflowState(WorkflowPaused)
+		}
+		// Log the hook event
+		m.AddLogEntry(widgets.LogDebug, "hook", fmt.Sprintf("%s: %s", e.Phase, e.Role))
+
+	case stream.RVREvent:
+		// RVR processing event
+		if e.Confidence < e.Threshold {
+			level := widgets.ToastLevelWarning
+			if e.Confidence < 0.4 {
+				level = widgets.ToastLevelError
+			}
+			m.ShowToast(fmt.Sprintf("RVR confidence %.0f%% (chunk %d)", e.Confidence*100, e.ChunkID), level)
+		}
+		m.AddLogEntry(widgets.LogDebug, "rvr", fmt.Sprintf("%s: chunk=%d conf=%.2f", e.Phase, e.ChunkID, e.Confidence))
+
+	case stream.RVRResultEvent:
+		// RVR final results
+		level := widgets.ToastLevelSuccess
+		if e.Overall < 0.8 {
+			level = widgets.ToastLevelWarning
+		}
+		if e.Overall < 0.4 {
+			level = widgets.ToastLevelError
+		}
+		m.ShowToast(fmt.Sprintf("RVR overall: %.0f%%", e.Overall*100), level)
+		if len(e.Caveats) > 0 {
+			m.AddLogEntry(widgets.LogWarn, "rvr", fmt.Sprintf("Caveats: %v", e.Caveats))
+		}
+
 	case string:
 		if e == "done" {
 			m.SetWorkflowState(WorkflowComplete)
+			if m.SessionManager != nil {
+				m.SessionManager.SetStatus("complete")
+			}
 			m.ShowToast("Workflow completed", widgets.ToastLevelSuccess)
 		}
 
 	case error:
 		m.LastError = e
 		m.SetWorkflowState(WorkflowError)
+		if m.SessionManager != nil {
+			m.SessionManager.SetStatus("error")
+		}
 		m.ShowToast(fmt.Sprintf("Error: %v", e), widgets.ToastLevelError)
 		m.AddLogEntry(widgets.LogError, "", e.Error())
 	}
@@ -909,9 +1364,53 @@ func (m Model) View() string {
 	return content
 }
 
+func (m *Model) saveSessionCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.SessionManager == nil {
+			return sessionSavedMsg{Err: fmt.Errorf("session manager unavailable")}
+		}
+		if m.SessionManager.Current == nil {
+			return sessionSavedMsg{Err: fmt.Errorf("no active session")}
+		}
+		sessionID := m.SessionManager.Current.ID
+		err := m.SessionManager.Save()
+		return sessionSavedMsg{ID: sessionID, Err: err}
+	}
+}
+
+func (m *Model) loadSessionCmd(sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		if m.SessionManager == nil {
+			return sessionLoadedMsg{Err: fmt.Errorf("session manager unavailable")}
+		}
+		sessionID = strings.TrimSpace(sessionID)
+		sessionID = strings.TrimSuffix(sessionID, ".json")
+		loaded, err := m.SessionManager.Load(sessionID)
+		return sessionLoadedMsg{Session: loaded, Err: err}
+	}
+}
+
+func (m *Model) replaySessionCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.SessionManager == nil || m.Stream == nil {
+			return replayDoneMsg{Err: fmt.Errorf("session replay unavailable")}
+		}
+		if m.SessionManager.Current == nil {
+			return replayDoneMsg{Err: fmt.Errorf("no session loaded")}
+		}
+		err := m.SessionManager.Replay(m.SessionManager.Current, m.Stream, m.ReplaySpeed)
+		return replayDoneMsg{Err: err}
+	}
+}
+
 // Run starts the TUI application.
 func Run(workflowStream *stream.WorkflowStream) error {
-	model := NewModel(workflowStream)
+	return RunWithTask(workflowStream, "")
+}
+
+// RunWithTask starts the TUI application with an initial task label.
+func RunWithTask(workflowStream *stream.WorkflowStream, task string) error {
+	model := NewModelWithTask(workflowStream, task)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err

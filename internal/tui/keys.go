@@ -36,6 +36,7 @@ type KeyMap struct {
 	Resume    key.Binding
 	NextStep  key.Binding
 	Skip      key.Binding
+	Kill      key.Binding
 	Confirm   key.Binding
 	Cancel    key.Binding
 
@@ -170,7 +171,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		Skip: key.NewBinding(
 			key.WithKeys("s"),
-			key.WithHelp("s", "skip step"),
+			key.WithHelp("s", "skip agent"),
+		),
+		Kill: key.NewBinding(
+			key.WithKeys("ctrl+k", "K"),
+			key.WithHelp("Ctrl+k", "kill workflow"),
 		),
 		Confirm: key.NewBinding(
 			key.WithKeys("enter"),
@@ -268,7 +273,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Views
 		{k.ToggleCenter, k.ToggleRight, k.FocusMode, k.MetricsView, k.DiffView, k.ZenMode},
 		// Workflow
-		{k.Pause, k.NextStep, k.Skip, k.Confirm, k.Cancel},
+		{k.Pause, k.NextStep, k.Skip, k.Kill, k.Confirm, k.Cancel},
 		// Files
 		{k.Open, k.Edit, k.CopyPath, k.Refresh},
 		// Search

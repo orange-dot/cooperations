@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,11 +75,11 @@ type Model struct {
 	Zen       *views.ZenView
 
 	// Workflow state
-	WorkflowState  WorkflowState
-	CurrentAgent   string
-	CurrentTask    string
-	TotalSteps     int
-	CompletedSteps int
+	WorkflowState     WorkflowState
+	CurrentAgent      string
+	CurrentTask       string
+	TotalSteps        int
+	CompletedSteps    int
 	WorkflowStepIndex map[string]int
 
 	// Stream for receiving updates
@@ -91,11 +92,16 @@ type Model struct {
 	PendingDecision       *stream.DecisionRequest
 	PendingDecisionAction stream.DecisionAction
 	InputMode             InputMode
+	PendingAction         string // "skip", "kill", "quit" for confirm dialogs
+
+	// Workflow control state
+	StepMode bool // Auto-pause after each agent
+	CanSkip  bool // Whether skip is available at current phase
 
 	// Input state
-	Keys        KeyMap
-	SearchMode  bool
-	SearchQuery string
+	Keys          KeyMap
+	SearchMode    bool
+	SearchQuery   string
 	SearchResults []int
 	SearchIndex   int
 	SearchTarget  SearchTarget
@@ -109,6 +115,7 @@ type Model struct {
 	SessionID      string
 	SessionName    string
 	SessionDir     string
+	RepoRoot       string
 	SessionManager *session.Manager
 	SessionInitErr error
 	ReplayActive   bool
@@ -131,17 +138,20 @@ func NewModelWithTask(workflowStream *stream.WorkflowStream, task string) Model 
 	}
 	sessionDir = filepath.Join(sessionDir, "tui_sessions")
 
+	repoRoot, _ := os.Getwd()
 	manager, err := session.NewManager(sessionDir)
 
 	model := Model{
-		Stream:         workflowStream,
-		Keys:           DefaultKeyMap(),
-		TickInterval:   100 * time.Millisecond,
-		StartTime:      time.Now(),
-		SessionDir:     sessionDir,
-		SessionManager: manager,
-		SessionInitErr: err,
-		ReplaySpeed:    1.0,
+		Stream:            workflowStream,
+		Keys:              DefaultKeyMap(),
+		TickInterval:      100 * time.Millisecond,
+		StartTime:         time.Now(),
+		SessionDir:        sessionDir,
+		RepoRoot:          repoRoot,
+		SessionManager:    manager,
+		SessionInitErr:    err,
+		ReplaySpeed:       1.0,
+		WorkflowStepIndex: map[string]int{},
 	}
 
 	if task != "" && manager != nil {
@@ -320,6 +330,108 @@ func (m *Model) AddFile(path string, status widgets.FileStatus) {
 	}
 }
 
+// RefreshFileTree reloads the file tree from disk or refreshes known entries.
+func (m *Model) RefreshFileTree() {
+	if m.Dashboard == nil || m.Dashboard.FileTree == nil {
+		return
+	}
+
+	root := m.RepoRoot
+	if root == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			root = cwd
+		}
+	}
+	if root == "" {
+		m.ShowToast("Unable to determine workspace root", widgets.ToastLevelWarning)
+		return
+	}
+
+	entries := m.Dashboard.FileTree.Snapshot()
+	if len(entries) > 0 {
+		m.Dashboard.FileTree.Clear()
+		for _, entry := range entries {
+			absPath := filepath.Join(root, filepath.FromSlash(entry.Path))
+			info, err := os.Stat(absPath)
+			if err != nil {
+				m.Dashboard.FileTree.AddPath(entry.Path, widgets.FileStatusDeleted, entry.IsDir)
+				continue
+			}
+			status := entry.Status
+			m.Dashboard.FileTree.AddPath(entry.Path, status, info.IsDir())
+		}
+		m.ShowToast("File tree refreshed", widgets.ToastLevelInfo)
+		return
+	}
+
+	// If no existing entries, build from disk with a reasonable cap.
+	const maxFiles = 2000
+	skips := map[string]struct{}{
+		".git":           {},
+		".cooperations":  {},
+		".claude":        {},
+		"node_modules":   {},
+	}
+
+	scanned := 0
+	startRoot := root
+	generated := filepath.Join(root, "generated")
+	if info, err := os.Stat(generated); err == nil && info.IsDir() {
+		startRoot = generated
+	}
+
+	m.Dashboard.FileTree.Clear()
+	_ = filepath.WalkDir(startRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path == startRoot {
+			return nil
+		}
+		name := d.Name()
+		if _, ok := skips[name]; ok && d.IsDir() {
+			return filepath.SkipDir
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			return nil
+		}
+		m.Dashboard.FileTree.AddPath(rel, widgets.FileStatusNone, false)
+		scanned++
+		if scanned >= maxFiles {
+			return fs.SkipAll
+		}
+		return nil
+	})
+
+	if scanned == 0 {
+		m.ShowToast("No files found to display", widgets.ToastLevelInfo)
+	} else {
+		m.ShowToast(fmt.Sprintf("Loaded %d files", scanned), widgets.ToastLevelInfo)
+	}
+}
+
+// ResolvePath returns an absolute path for a workspace-relative path.
+func (m *Model) ResolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	root := m.RepoRoot
+	if root == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			root = cwd
+		}
+	}
+	if root == "" {
+		return path
+	}
+	return filepath.Join(root, filepath.FromSlash(path))
+}
+
 // UpdateProgress updates the progress bar.
 func (m *Model) UpdateProgress(percent float64, label string) {
 	if m.Dashboard != nil {
@@ -346,6 +458,7 @@ func (m *Model) UpdateMetrics(input, output int) {
 // UpdateMetricsSnapshot updates the metrics panel with a live snapshot.
 func (m *Model) UpdateMetricsSnapshot(snapshot stream.MetricsSnapshot) {
 	if m.Dashboard != nil {
+		m.Dashboard.CostTracker.SetSnapshot(snapshot.PromptTokens, snapshot.CompletionTokens, snapshot.EstimatedCostUSD)
 		m.Dashboard.Metrics.Clear()
 		m.Dashboard.Metrics.AddMetric(widgets.NewMetricCard("Tokens", fmt.Sprintf("%d", snapshot.TotalTokens), ""))
 		m.Dashboard.Metrics.AddMetric(widgets.NewMetricCard("Prompt", fmt.Sprintf("%d", snapshot.PromptTokens), ""))
@@ -593,6 +706,7 @@ func (m *Model) runSearch(query string) bool {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		m.clearSearchHighlights()
+		m.SearchQuery = ""
 		m.SearchResults = nil
 		m.SearchIndex = 0
 		m.SearchTarget = SearchTargetNone
@@ -653,11 +767,13 @@ func (m *Model) resetForReplay() {
 	m.CurrentTask = ""
 	m.TotalSteps = 0
 	m.CompletedSteps = 0
+	m.WorkflowStepIndex = nil
 	m.clearSearchHighlights()
 	m.SearchQuery = ""
 	m.SearchResults = nil
 	m.SearchIndex = 0
 	m.SearchTarget = SearchTargetNone
+	m.SearchMode = false
 
 	if m.Dashboard != nil {
 		m.Dashboard.StreamingText.Clear()

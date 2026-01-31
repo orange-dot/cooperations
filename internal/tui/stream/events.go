@@ -133,3 +133,70 @@ type SessionEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data,omitempty"`
 }
+
+// ControlSignal represents workflow control commands from the UI.
+type ControlSignal string
+
+const (
+	ControlStep   ControlSignal = "step"   // Execute one agent, then pause
+	ControlSkip   ControlSignal = "skip"   // Skip current agent, go to next
+	ControlKill   ControlSignal = "kill"   // Immediate abort with cleanup
+	ControlPause  ControlSignal = "pause"  // Pause at next hook point
+	ControlResume ControlSignal = "resume" // Resume execution
+)
+
+// ControlEvent represents a control signal from the UI to the orchestrator.
+type ControlEvent struct {
+	Signal    ControlSignal `json:"signal"`
+	Timestamp time.Time     `json:"timestamp"`
+	Reason    string        `json:"reason,omitempty"`
+}
+
+// HookPhase identifies when a hook runs (mirrors orchestrator.HookPhase for TUI).
+type HookPhase string
+
+const (
+	HookPhaseWorkflowStart HookPhase = "workflow_start"
+	HookPhasePreAgent      HookPhase = "pre_agent"
+	HookPhaseMidAgent      HookPhase = "mid_agent"
+	HookPhasePostAgent     HookPhase = "post_agent"
+	HookPhasePreHandoff    HookPhase = "pre_handoff"
+	HookPhasePostHandoff   HookPhase = "post_handoff"
+	HookPhaseWorkflowEnd   HookPhase = "workflow_end"
+)
+
+// HookNotification represents a hook being triggered (for UI display).
+type HookNotification struct {
+	Phase     HookPhase `json:"phase"`
+	TaskID    string    `json:"task_id"`
+	Role      string    `json:"role"`
+	Timestamp time.Time `json:"timestamp"`
+	Paused    bool      `json:"paused"`
+	CanSkip   bool      `json:"can_skip"`
+}
+
+// RVREvent represents RVR processing state for TUI display.
+type RVREvent struct {
+	Phase       string  `json:"phase"` // "layer1", "layer2", "synthesis"
+	ChunkID     int     `json:"chunk_id"`
+	Confidence  float64 `json:"confidence"`
+	Threshold   float64 `json:"threshold"`
+	Uncertainty string  `json:"uncertainty,omitempty"`
+	Retrying    bool    `json:"retrying"`
+}
+
+// RVRResultEvent represents final RVR results for TUI display.
+type RVRResultEvent struct {
+	TaskType   string              `json:"task_type"`
+	Overall    float64             `json:"overall"`
+	Breakdown  []RVRBreakdownItem  `json:"breakdown"`
+	Caveats    []string            `json:"caveats"`
+}
+
+// RVRBreakdownItem represents a single chunk's RVR result.
+type RVRBreakdownItem struct {
+	ChunkID     int     `json:"chunk_id"`
+	Confidence  float64 `json:"confidence"`
+	Uncertainty string  `json:"uncertainty"`
+	Verified    bool    `json:"verified"`
+}

@@ -1,6 +1,9 @@
 package stream
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // WorkflowStream provides channels for streaming workflow events to TUI.
 type WorkflowStream struct {
@@ -30,9 +33,13 @@ type WorkflowStream struct {
 	Session chan SessionEvent
 
 	// Control
-	Done  chan struct{}
-	Error chan error
-	Pause chan bool
+	Done       chan struct{}
+	Error      chan error
+	Pause      chan bool
+	Control    chan ControlEvent      // Bidirectional control signals
+	HookNotify chan HookNotification  // Hook state notifications
+	RVR        chan RVREvent          // RVR processing events
+	RVRResult  chan RVRResultEvent    // RVR final results
 
 	closeOnce sync.Once
 }
@@ -60,9 +67,13 @@ func NewWorkflowStream() *WorkflowStream {
 
 		Session: make(chan SessionEvent, 5),
 
-		Done:  make(chan struct{}),
-		Error: make(chan error, 1),
-		Pause: make(chan bool, 1),
+		Done:       make(chan struct{}),
+		Error:      make(chan error, 1),
+		Pause:      make(chan bool, 1),
+		Control:    make(chan ControlEvent, 10),
+		HookNotify: make(chan HookNotification, 20),
+		RVR:        make(chan RVREvent, 20),
+		RVRResult:  make(chan RVRResultEvent, 5),
 	}
 }
 
@@ -88,6 +99,10 @@ func (s *WorkflowStream) Close() {
 		close(s.Done)
 		close(s.Error)
 		close(s.Pause)
+		close(s.Control)
+		close(s.HookNotify)
+		close(s.RVR)
+		close(s.RVRResult)
 	})
 }
 
@@ -165,6 +180,42 @@ func (s *WorkflowStream) SignalDone() {
 func (s *WorkflowStream) SendError(err error) {
 	select {
 	case s.Error <- err:
+	default:
+	}
+}
+
+// SendControl sends a control signal to the orchestrator.
+func (s *WorkflowStream) SendControl(signal ControlSignal, reason string) {
+	select {
+	case s.Control <- ControlEvent{
+		Signal:    signal,
+		Timestamp: time.Now(),
+		Reason:    reason,
+	}:
+	default:
+	}
+}
+
+// SendHookNotify sends a hook notification to the TUI.
+func (s *WorkflowStream) SendHookNotify(n HookNotification) {
+	select {
+	case s.HookNotify <- n:
+	default:
+	}
+}
+
+// SendRVR sends an RVR processing event.
+func (s *WorkflowStream) SendRVR(e RVREvent) {
+	select {
+	case s.RVR <- e:
+	default:
+	}
+}
+
+// SendRVRResult sends final RVR results.
+func (s *WorkflowStream) SendRVRResult(r RVRResultEvent) {
+	select {
+	case s.RVRResult <- r:
 	default:
 	}
 }
